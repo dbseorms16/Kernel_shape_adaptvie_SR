@@ -43,6 +43,11 @@ def define_G(opt):
         import models.archs.han_arch as han_arch
         netG = han_arch.HAN(args=opt_net)
 
+    elif which_model == 'SwinIR':
+        import models.archs.swinir_arch as swinir_arch
+        netG = swinir_arch.SwinIR(upscale=opt_net['scale'], in_chans=3, img_size=opt_net['training_patch_size'], window_size=8,
+                    img_range=1., depths=[6, 6, 6, 6, 6, 6], embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6],
+                    mlp_ratio=2, upsampler='pixelshuffle', resi_connection='1conv')
     
     elif which_model == 'ARCNN':
         import models.archs.arcnn_arch as arcnn_arch

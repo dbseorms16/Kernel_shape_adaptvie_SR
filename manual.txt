@@ -49,3 +49,6 @@ python test.py -opt options/test/HAN/HAN_V.yml
 python train.py -opt options/train/SISR/pre_train_ARCNN.yml
 
 python test.py -opt options/test/ARCNN/ARCNN_V.yml
+
+python test.py -opt options/test/SwinIR.yml
+
