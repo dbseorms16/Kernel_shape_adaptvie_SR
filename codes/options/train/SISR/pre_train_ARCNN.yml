@@ -1,0 +1,79 @@
+#### general settings
+name: ARCNN_3010_more
+use_tb_logger: true
+model: video_base
+distortion: sr
+scale: 1
+gpu_ids: [1] # [0,1,2,3,4,5,6,7]
+kernel_size: 21
+
+#### datasets
+datasets:
+  train:
+    name: Vimeo
+    mode: set_LQGT
+    dataroot_GT: F:\DIV2K\DIV2K_train_HR
+    interval_list: [1]
+    data_root: 'F:/'
+    img_type: img
+    use_shuffle: true
+    n_workers: 3  # per GPU
+    batch_size: 100
+    patch_size: 50
+    use_flip: true
+    use_rot: true
+    color: RGB
+    sigma_x: 3 # up and below all revised
+    sigma_y: 1
+    theta: 0
+
+  val:
+    name: Vid4
+    mode: set_LQGT
+    dataroot_GT: F:\DIV2K\DIV2K_valid_HR
+    cache_data: True
+    padding: new_info
+    degradation_mode: set
+    sigma_x: 3
+    sigma_y: 1
+    theta: 0
+    patch_size: 50
+
+#### network structures
+network_G:
+  which_model_G: ARCNN
+  n_resgroups: 10
+  n_resblocks : 20
+  n_feats : 128
+  reduction : 16
+  scale : 2
+  n_colors: 3
+
+#### path
+path:
+  pretrain_model_G: F:\KAWM\experiments\ARCNN_0404\models/200000_G.pth
+  ground_truth_G: F:\KAWM\experiments\ARCNN_4010_more\models/latest_G.pth
+  strict_load: False
+  resume_state: ~
+
+#### training settings: learning rate scheme, loss
+train:
+  lr_G: !!float 1e-4
+  lr_scheme: MultiStepLR
+  beta1: 0.9
+  beta2: 0.99
+  epochs: 1000
+  niter: 10000
+  warmup_iter: -1  # -1: no warm up
+  lr_steps: [100000, 150000]
+  lr_gamma: 0.2
+  pixel_criterion: l1
+  pixel_weight: 1.0
+
+  manual_seed: 0
+  val_freq: !!float 1000
+
+#### logger
+logger:
+  print_freq: 100
+  save_checkpoint_freq: 500

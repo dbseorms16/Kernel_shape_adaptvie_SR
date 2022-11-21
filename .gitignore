@@ -1,0 +1,6 @@
+*.pth
+*.state
+*.log
+*.png
+tb_logger
+*.pt
