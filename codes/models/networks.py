@@ -49,12 +49,18 @@ def define_G(opt):
                     img_range=1., depths=[6, 6, 6, 6, 6, 6], embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6],
                     mlp_ratio=2, upsampler='pixelshuffle', resi_connection='1conv')
     
+    elif which_model == 'HAT':
+        import models.archs.hat_arch as hat_arch
+        netG = hat_arch.HAT()
+        
     elif which_model == 'ARCNN':
         import models.archs.arcnn_arch as arcnn_arch
         netG = arcnn_arch.ARCNN(args=opt_net)
 
-    elif which_model == 'DUF':
-        import models.archs.DUF_arch as DUF_arch
+    elif which_model == 'QHAN':
+        import models.archs.qhan as qhan
+        netG = qhan.QHAN(args=opt_net)
+        
     else:
         raise NotImplementedError('Generator model [{:s}] not recognized'.format(which_model))
 

@@ -87,7 +87,7 @@ class SETLQGTDataset(data.Dataset):
         img_GT = cv2.cvtColor(img_GT, cv2.COLOR_BGR2RGB)
 
         img_GT = torch.from_numpy(np.ascontiguousarray(np.transpose(img_GT, (2, 0, 1)))).float()
-        img_LQ = self.kernel_gen.apply(img_GT)
+        img_LQ, kernel = self.kernel_gen.apply(img_GT)
 
         # BGR to RGB, HWC to CHW, numpy to tensor
         # if img_GT.shape[2] == 3:
@@ -95,7 +95,7 @@ class SETLQGTDataset(data.Dataset):
         #     img_LQ = img_LQ[:, :, [2, 1, 0]]
 
 
-        return {'LQ': img_LQ, 'GT': img_GT, 'GT_path': GT_path, 'filename':filename}
+        return {'LQ': img_LQ, 'GT': img_GT, 'GT_path': GT_path, 'filename':filename, 'kernel' : torch.FloatTensor(kernel)}
 
     def __len__(self):
         return len(self.data_info['path_GT'])

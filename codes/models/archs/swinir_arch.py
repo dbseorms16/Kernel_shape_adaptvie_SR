@@ -9,7 +9,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
-
+import imageio
+import os
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
@@ -722,6 +723,13 @@ class SwinIR(nn.Module):
 
                          )
             self.layers.append(layer)
+        
+        self.KAWM_layers = nn.ModuleList()
+
+        for i_layer in range(self.num_layers):
+            AdaptiveFM = KAWM(in_channel=embed_dim)
+            self.KAWM_layers.append(AdaptiveFM)
+            
         self.norm = norm_layer(self.num_features)
 
         # build the last conv layer in deep feature extraction
@@ -763,46 +771,28 @@ class SwinIR(nn.Module):
 
         self.apply(self._init_weights)
 
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=.02)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
-
-    @torch.jit.ignore
-    def no_weight_decay(self):
-        return {'absolute_pos_embed'}
-
-    @torch.jit.ignore
-    def no_weight_decay_keywords(self):
-        return {'relative_position_bias_table'}
-
-    def check_image_size(self, x):
-        _, _, h, w = x.size()
-        mod_pad_h = (self.window_size - h % self.window_size) % self.window_size
-        mod_pad_w = (self.window_size - w % self.window_size) % self.window_size
-        x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h), 'reflect')
-        return x
-
-    def forward_features(self, x):
+    def forward_features(self, x, kernel):
+        _, c, w, h = x.size()
         x_size = (x.shape[2], x.shape[3])
+        
         x = self.patch_embed(x)
+        
         if self.ape:
             x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
 
-        for layer in self.layers:
+        for index, layer in enumerate(self.layers):
             x = layer(x, x_size)
-
+            x = x.reshape(-1, c, w, h)
+            x = self.KAWM_layers[index](x, kernel)
+            x = x.reshape(-1, w *h, c)
+            
         x = self.norm(x)  # B L C
         x = self.patch_unembed(x, x_size)
 
         return x
 
-    def forward(self, x):
+    def forward(self, x, kernel):
         H, W = x.shape[2:]
         x = self.check_image_size(x)
         
@@ -812,7 +802,7 @@ class SwinIR(nn.Module):
         if self.upsampler == 'pixelshuffle':
             # for classical SR
             x = self.conv_first(x)
-            x = self.conv_after_body(self.forward_features(x)) + x
+            x = self.conv_after_body(self.forward_features(x, kernel)) + x
             x = self.conv_before_upsample(x)
             x = self.conv_last(self.upsample(x))
         elif self.upsampler == 'pixelshuffledirect':
@@ -839,6 +829,30 @@ class SwinIR(nn.Module):
 
         return x[:, :, :H*self.upscale, :W*self.upscale]
 
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            trunc_normal_(m.weight, std=.02)
+            if isinstance(m, nn.Linear) and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        return {'absolute_pos_embed'}
+
+    @torch.jit.ignore
+    def no_weight_decay_keywords(self):
+        return {'relative_position_bias_table'}
+
+    def check_image_size(self, x):
+        _, _, h, w = x.size()
+        mod_pad_h = (self.window_size - h % self.window_size) % self.window_size
+        mod_pad_w = (self.window_size - w % self.window_size) % self.window_size
+        x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h), 'reflect')
+        return x
+    
     def flops(self):
         flops = 0
         H, W = self.patches_resolution
@@ -865,3 +879,53 @@ if __name__ == '__main__':
     x = torch.randn((1, 3, height, width))
     x = model(x)
     print(x.shape)
+
+
+global layer 
+layer = 0
+class KAWM(nn.Module):
+  
+    def __init__(self, in_channel, kernel_size=3):
+
+        super(KAWM, self).__init__()
+        padding = get_valid_padding(kernel_size, 1)
+        self.transformer = nn.Conv2d(in_channel, in_channel, kernel_size,
+                                     padding=padding, groups=in_channel)
+        
+        self.ke1 = nn.Conv2d(1, in_channel*2, 2, padding=0, bias=True)
+        self.relu = nn.ReLU(inplace=True)
+        self.ke2 = nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=True)
+        self.avg = nn.AdaptiveAvgPool2d(1)
+
+    def forward(self, x, kernel):
+        ##kernle and sigmoid
+        b, c,_,_ = x.size()
+        kernel = kernel.reshape(b, 1, 21, 21)
+        y = self.ke1(kernel)
+        y = self.relu(y)
+        y = self.ke2(y)
+        y = self.avg(y).sigmoid()
+        
+        return y * self.transformer(x) + x
+        
+    
+def get_valid_padding(kernel_size, dilation):
+    kernel_size = kernel_size + (kernel_size - 1) * (dilation - 1)
+    padding = (kernel_size - 1) // 2
+    return padding
+
+def make_optimizer(opt, my_model):
+    ## fineture adafm
+    if opt.ada_finetune_norm:
+        optim_params = []
+        for k, v in my_model.named_parameters():
+            v.requires_grad = False
+            if k.find('transformer') >= 0:
+            # if k.find('attent') >= 0:
+                v.requires_grad = True
+                if not opt.test_only:
+                    v.data.zero_()
+                optim_params.append(v)
+    else:
+        optim_params = list(my_model.parameters())
+        

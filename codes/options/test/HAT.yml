@@ -1,5 +1,5 @@
 #### general settings
-name: SwinIR2002_withKSAM
+name: HAT_2002
 use_tb_logger: false
 model: video_base
 distortion: sr
@@ -36,7 +36,6 @@ datasets:
   val:
     name: Vid4
     mode: set_LQGT
-    # dataroot_GT: F:\DIV2K\BSD100\HR
     dataroot_GT: F:\DIV2K\DIV2K_valid_HR
     cache_data: True
     padding: new_info
@@ -49,7 +48,7 @@ datasets:
 
 #### network structures
 network_G:
-  which_model_G: SwinIR
+  which_model_G: HAT
   scale : 4
   in_chans : 3
   training_patch_size : 64
@@ -59,7 +58,7 @@ network_G:
 
 #### path
 path:
-  pretrain_model_G: F:\KAWM\pretrained\SwinIR/SwinIR_0202.pth
+  pretrain_model_G: F:\KAWM\experiments\HAT\models/100000_G.pth
   strict_load: False
   resume_state: ~
   img_save_path: ../results
@@ -79,14 +78,14 @@ train:
   niter: 100000
   warmup_iter: -1  # -1: no warm up
   lr_steps: [40000, 60000]
-  lr_gamma: 0.2
+  lr_gamma: 0.5
   use_real: False
   pixel_criterion: l1
   pixel_weight: 1.0
-  val_freq: !!float 1000
+  val_freq: !!float 10000
   manual_seed: 0
 
 #### logger
 logger:
-  print_freq: 100
-  save_checkpoint_freq: !!float 1e3
+  print_freq: 1000
+  save_checkpoint_freq: !!float 5000

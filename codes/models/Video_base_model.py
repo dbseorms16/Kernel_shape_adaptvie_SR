@@ -122,6 +122,11 @@ class VideoBaseModel(BaseModel):
                 optim_params = []
                 for k, v in self.netG.named_parameters():
                     
+                    v.requires_grad = False
+                    if k.find('transformer') >= 0:
+                    # if k.find('attent') >= 0:
+                        v.requires_grad = True
+                    
                     # if 'feature_extraction' in k:
                     #     v.requires_grad = False
                         
@@ -195,6 +200,7 @@ class VideoBaseModel(BaseModel):
 
     def feed_data(self, data, need_GT=True):
         self.var_L = data['LQ'].to(self.device)
+        self.kernel = data['kernel'].to(self.device)
         if need_GT:
             self.real_H = data['GT'].to(self.device)
 
@@ -207,7 +213,7 @@ class VideoBaseModel(BaseModel):
             self.set_params_lr_zero()
 
         self.optimizer_G.zero_grad()
-        self.fake_H = self.netG(self.var_L)
+        self.fake_H = self.netG(self.var_L, self.kernel)
 
         l_pix = self.l_pix_w * self.cri_pix(self.fake_H, self.real_H)
         l_pix.backward()
@@ -236,7 +242,7 @@ class VideoBaseModel(BaseModel):
     def test(self):
         self.netG.eval()
         with torch.no_grad():
-            self.fake_H = self.netG(self.var_L)
+            self.fake_H = self.netG(self.var_L, self.kernel)
         self.netG.train()
 
     def get_current_log(self):
