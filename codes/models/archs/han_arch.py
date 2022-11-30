@@ -135,21 +135,34 @@ class KAWM(nn.Module):
         self.transformer = nn.Conv2d(in_channel, in_channel, (3, 1), bias=False,
                                      padding=(1, 0), groups=in_channel, padding_mode='replicate')
         
+        # self.kernel_transformer = nn.Sequential(
+        #     nn.Conv2d(1, in_channel*2, 2, padding=0, bias=False),
+        #     nn.ReLU(inplace=True),
+        #     nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=False),
+        #     nn.AdaptiveAvgPool2d(1),
+        #     nn.Sigmoid()
+        # )
+        
         self.kernel_transformer = nn.Sequential(
-            nn.Conv2d(1, in_channel*2, 2, padding=0, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=False),
-            nn.AdaptiveAvgPool2d(1),
+            nn.Linear(10, in_channel*2),
+            nn.ReLU(),
+            nn.Linear(in_channel*2, in_channel*2),
+            nn.ReLU(),
+            nn.Linear(in_channel*2, in_channel),
             nn.Sigmoid()
         )
 
     def forward(self, x, kernel):
         ##kernle and sigmoid
         b, c,_,_ = x.size()
-        kernel = kernel.reshape(b, 1, 21, 21)
-        y = self.kernel_transformer(kernel)
+        # kernel = kernel.reshape(b, 1, 21, 21)
+        # y = self.kernel_transformer(kernel)
         
-        return y * self.transformer(x) + x
+        y = self.kernel_transformer(kernel)
+        res = self.transformer(x) * y[:, :, None, None] # works
+        
+        # return y * self.transformer(x) + x
+        return res + x
 
 def get_valid_padding(kernel_size, dilation):
     kernel_size = kernel_size + (kernel_size - 1) * (dilation - 1)
@@ -180,6 +193,20 @@ class ResidualGroup(nn.Module):
         
         res += x[0]
         return res, x[1]
+
+from torch.autograd import Variable
+class PCAEncoder(object):
+    def __init__(self, weight, cuda=False):
+        self.weight = weight #[l^2, k]
+        self.size = self.weight.size()
+        if cuda:
+            self.weight = Variable(self.weight).cuda()
+        else:
+            self.weight = Variable(self.weight)
+
+    def __call__(self, batch_kernel):
+        B, C, H, W = batch_kernel.size() #[B, l, l]
+        return torch.bmm(batch_kernel.view((B, 1, H * W)), self.weight.expand((B, ) + self.size)).view((B, -1))
 
 ## Holistic Attention Network (HAN)
 class HAN(nn.Module):
@@ -225,9 +252,16 @@ class HAN(nn.Module):
         self.last = nn.Conv2d(n_feats*2, n_feats, 3, 1, 1)
         self.last_KAWM = KAWM(n_feats)
         self.tail = nn.Sequential(*modules_tail)
+        
+        self.encoder = PCAEncoder(torch.load('../pca_matrix_x4.pth'), cuda=True)
+        
 
     def forward(self, x, kernel):
         # x = self.sub_mean(x)
+        b, c, w, h = x.size()
+        kernel = kernel.reshape(b, 1, 21, 21)
+        kernel = self.encoder(kernel)
+        
         x = self.head(x)
         res = x
         #pdb.set_trace()
