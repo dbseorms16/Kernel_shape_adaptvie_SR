@@ -58,3 +58,5 @@ python train.py -opt options/test/SwinIR.yml
 
 python test.py -opt options/test/QHAN.yml
 
+python test.py -opt options/test/QHAN.yml
+

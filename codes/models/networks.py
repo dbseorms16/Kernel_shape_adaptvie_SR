@@ -59,7 +59,7 @@ def define_G(opt):
 
     elif which_model == 'QHAN':
         import models.archs.qhan as qhan
-        netG = qhan.QHAN(args=opt_net)
+        netG = qhan.QHAN(args=opt_net, pca=opt_net['pca_matrix'])
         
     else:
         raise NotImplementedError('Generator model [{:s}] not recognized'.format(which_model))

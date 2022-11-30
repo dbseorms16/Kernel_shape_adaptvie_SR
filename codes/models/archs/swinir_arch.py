@@ -214,29 +214,6 @@ class SwinTransformerBlock(nn.Module):
 
         self.register_buffer("attn_mask", attn_mask)
 
-    def calculate_mask(self, x_size):
-        # calculate attention mask for SW-MSA
-        H, W = x_size
-        img_mask = torch.zeros((1, H, W, 1))  # 1 H W 1
-        h_slices = (slice(0, -self.window_size),
-                    slice(-self.window_size, -self.shift_size),
-                    slice(-self.shift_size, None))
-        w_slices = (slice(0, -self.window_size),
-                    slice(-self.window_size, -self.shift_size),
-                    slice(-self.shift_size, None))
-        cnt = 0
-        for h in h_slices:
-            for w in w_slices:
-                img_mask[:, h, w, :] = cnt
-                cnt += 1
-
-        mask_windows = window_partition(img_mask, self.window_size)  # nW, window_size, window_size, 1
-        mask_windows = mask_windows.view(-1, self.window_size * self.window_size)
-        attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
-        attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(attn_mask == 0, float(0.0))
-
-        return attn_mask
-
     def forward(self, x, x_size):
         H, W = x_size
         B, L, C = x.shape
@@ -271,14 +248,40 @@ class SwinTransformerBlock(nn.Module):
             x = torch.roll(shifted_x, shifts=(self.shift_size, self.shift_size), dims=(1, 2))
         else:
             x = shifted_x
+        print(x.size())
         x = x.view(B, H * W, C)
-
+        print('x.s',x.size())
+        
         # FFN
         x = shortcut + self.drop_path(x)
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
+        a = self.mlp(self.norm2(x))
+        x = x + self.drop_path(a)
 
         return x
 
+    def calculate_mask(self, x_size):
+        # calculate attention mask for SW-MSA
+        H, W = x_size
+        img_mask = torch.zeros((1, H, W, 1))  # 1 H W 1
+        h_slices = (slice(0, -self.window_size),
+                    slice(-self.window_size, -self.shift_size),
+                    slice(-self.shift_size, None))
+        w_slices = (slice(0, -self.window_size),
+                    slice(-self.window_size, -self.shift_size),
+                    slice(-self.shift_size, None))
+        cnt = 0
+        for h in h_slices:
+            for w in w_slices:
+                img_mask[:, h, w, :] = cnt
+                cnt += 1
+
+        mask_windows = window_partition(img_mask, self.window_size)  # nW, window_size, window_size, 1
+        mask_windows = mask_windows.view(-1, self.window_size * self.window_size)
+        attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
+        attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(attn_mask == 0, float(0.0))
+
+        return attn_mask
+    
     def extra_repr(self) -> str:
         return f"dim={self.dim}, input_resolution={self.input_resolution}, num_heads={self.num_heads}, " \
                f"window_size={self.window_size}, shift_size={self.shift_size}, mlp_ratio={self.mlp_ratio}"
@@ -376,7 +379,6 @@ class BasicLayer(nn.Module):
         self.input_resolution = input_resolution
         self.depth = depth
         self.use_checkpoint = use_checkpoint
-
         # build blocks
         self.blocks = nn.ModuleList([
             SwinTransformerBlock(dim=dim, input_resolution=input_resolution,
@@ -389,18 +391,34 @@ class BasicLayer(nn.Module):
                                  norm_layer=norm_layer)
             for i in range(depth)])
 
+        # self.KAWM_V_layers = nn.ModuleList()
+        # self.KAWM_layers = KAWM(in_channel=dim)
+
+        # for i in range(depth):
+        #     AdaptiveFM = KAWM(in_channel=dim)
+        #     # AdaptiveFM_V = KAWM_V(in_channel=dim)
+        #     # AdaptiveFM = KAWM(in_channel=embed_dim)
+        #     self.KAWM_layers.append(AdaptiveFM)
+            # self.KAWM_V_layers.append(AdaptiveFM_V)
+            
         # patch merging layer
         if downsample is not None:
             self.downsample = downsample(input_resolution, dim=dim, norm_layer=norm_layer)
         else:
             self.downsample = None
 
-    def forward(self, x, x_size):
-        for blk in self.blocks:
+    def forward(self, x, x_size, kernel):
+        for index, blk in enumerate(self.blocks):
             if self.use_checkpoint:
                 x = checkpoint.checkpoint(blk, x, x_size)
             else:
                 x = blk(x, x_size)
+                
+                # x = self.KAWM_layers[index](x, x_size, kernel)
+            # x = self.KAWM_layers(x, x_size, kernel)
+                
+                # x = self.KAWM_V_layers[index](x, x_size, kernel)
+            
         if self.downsample is not None:
             x = self.downsample(x)
         return x
@@ -416,6 +434,57 @@ class BasicLayer(nn.Module):
             flops += self.downsample.flops()
         return flops
 
+from torch.autograd import Variable
+class PCAEncoder(object):
+    def __init__(self, weight, cuda=False):
+        self.weight = weight #[l^2, k]
+        self.size = self.weight.size()
+        if cuda:
+            self.weight = Variable(self.weight).cuda()
+        else:
+            self.weight = Variable(self.weight)
+
+    def __call__(self, batch_kernel):
+        B, C, H, W = batch_kernel.size() #[B, l, l]
+        return torch.bmm(batch_kernel.view((B, 1, H * W)), self.weight.expand((B, ) + self.size)).view((B, -1))
+
+class KAWM(nn.Module):
+  
+    def __init__(self, in_channel, kernel_size=3):
+
+        super(KAWM, self).__init__()
+        # self.encoder = PCAEncoder(pca, cuda=cuda)
+        
+        self.kernel_transformer = nn.Sequential(
+            nn.Linear(10, in_channel*2),
+            nn.ReLU(),
+            nn.Linear(in_channel*2, in_channel*2),
+            nn.ReLU(),
+            nn.Linear(in_channel*2, in_channel),
+            nn.Sigmoid()
+        )
+                
+        self.transformer = nn.Conv2d(in_channel, in_channel, (3, 1), bias=False,
+                                     padding=(1, 0), groups=in_channel, padding_mode='replicate')
+
+        constant_init(self.transformer, val=0)
+        
+    def forward(self, x, x_size, kernel):
+        ##kernle and sigmoid
+        b, c, dim = x.size()
+        h, w = x_size
+        y = self.kernel_transformer(kernel)
+        
+        x = x.reshape(b, -1, h, w)
+        shortcut = x
+        # x = self.transformer(x) * y
+        x = self.transformer(x) * y[:, :, None, None] # works
+        
+        x += shortcut
+        x = x.reshape(b, c, dim)
+        
+        
+        return x
 
 class RSTB(nn.Module):
     """Residual Swin Transformer Block (RSTB).
@@ -479,8 +548,8 @@ class RSTB(nn.Module):
             img_size=img_size, patch_size=patch_size, in_chans=0, embed_dim=dim,
             norm_layer=None)
 
-    def forward(self, x, x_size):
-        return self.patch_embed(self.conv(self.patch_unembed(self.residual_group(x, x_size), x_size))) + x
+    def forward(self, x, x_size, kernel):
+        return self.patch_embed(self.conv(self.patch_unembed(self.residual_group(x, x_size, kernel), x_size))) + x
 
     def flops(self):
         flops = 0
@@ -723,12 +792,7 @@ class SwinIR(nn.Module):
 
                          )
             self.layers.append(layer)
-        
-        self.KAWM_layers = nn.ModuleList()
-
-        for i_layer in range(self.num_layers):
-            AdaptiveFM = KAWM(in_channel=embed_dim)
-            self.KAWM_layers.append(AdaptiveFM)
+       
             
         self.norm = norm_layer(self.num_features)
 
@@ -770,25 +834,28 @@ class SwinIR(nn.Module):
             self.conv_last = nn.Conv2d(embed_dim, num_out_ch, 3, 1, 1)
 
         self.apply(self._init_weights)
+        
+        
+        self.encoder = PCAEncoder(torch.load('../pca_matrix_x4.pth'), cuda=True)
 
     def forward_features(self, x, kernel):
-        _, c, w, h = x.size()
+        b, c, w, h = x.size()
         x_size = (x.shape[2], x.shape[3])
-        
         x = self.patch_embed(x)
         
         if self.ape:
             x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
 
-        for index, layer in enumerate(self.layers):
-            x = layer(x, x_size)
-            x = x.reshape(-1, c, w, h)
-            x = self.KAWM_layers[index](x, kernel)
-            x = x.reshape(-1, w *h, c)
-            
+        
+        kernel = kernel.reshape(b, 1, 21, 21)
+        kernel = self.encoder(kernel)
+        
+        for layer in self.layers:
+            x = layer(x, x_size, kernel)
         x = self.norm(x)  # B L C
         x = self.patch_unembed(x, x_size)
+        
 
         return x
 
@@ -803,8 +870,11 @@ class SwinIR(nn.Module):
             # for classical SR
             x = self.conv_first(x)
             x = self.conv_after_body(self.forward_features(x, kernel)) + x
+            
             x = self.conv_before_upsample(x)
+            
             x = self.conv_last(self.upsample(x))
+            
         elif self.upsampler == 'pixelshuffledirect':
             # for lightweight SR
             x = self.conv_first(x)
@@ -883,32 +953,12 @@ if __name__ == '__main__':
 
 global layer 
 layer = 0
-class KAWM(nn.Module):
-  
-    def __init__(self, in_channel, kernel_size=3):
+def constant_init(module, val, bias=0):
+    if hasattr(module, 'weight') and module.weight is not None:
+        nn.init.constant_(module.weight, val)
+    if hasattr(module, 'bias') and module.bias is not None:
+        nn.init.constant_(module.bias, bias)
 
-        super(KAWM, self).__init__()
-        padding = get_valid_padding(kernel_size, 1)
-        self.transformer = nn.Conv2d(in_channel, in_channel, kernel_size,
-                                     padding=padding, groups=in_channel)
-        
-        self.ke1 = nn.Conv2d(1, in_channel*2, 2, padding=0, bias=True)
-        self.relu = nn.ReLU(inplace=True)
-        self.ke2 = nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=True)
-        self.avg = nn.AdaptiveAvgPool2d(1)
-
-    def forward(self, x, kernel):
-        ##kernle and sigmoid
-        b, c,_,_ = x.size()
-        kernel = kernel.reshape(b, 1, 21, 21)
-        y = self.ke1(kernel)
-        y = self.relu(y)
-        y = self.ke2(y)
-        y = self.avg(y).sigmoid()
-        
-        return y * self.transformer(x) + x
-        
-    
 def get_valid_padding(kernel_size, dilation):
     kernel_size = kernel_size + (kernel_size - 1) * (dilation - 1)
     padding = (kernel_size - 1) // 2

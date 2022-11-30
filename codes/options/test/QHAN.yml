@@ -36,7 +36,7 @@ datasets:
   val:
     name: Vid4
     mode: set_LQGT
-    dataroot_GT: F:\DIV2K\DIV2K_valid_HR
+    dataroot_GT: F:\DIV2K\Set5\HR
     cache_data: True
     padding: new_info
     degradation_mode: set
@@ -58,11 +58,12 @@ network_G:
   rgb_range: 255
   n_colors: 3
   res_scale: 1
+  pca_matrix : ../pretrained/pca_matrix.pth
 
 
 #### path
 path:
-  pretrain_model_G: F:/KAWM/pretrained/QHAN/QHAN.pt
+  pretrain_model_G: F:/KAWM/pretrained/QHAN/train_model_1290.pth
   strict_load: False
   resume_state: ~
   img_save_path: ../results

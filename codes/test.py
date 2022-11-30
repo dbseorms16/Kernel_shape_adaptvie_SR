@@ -128,13 +128,21 @@ def main():
         
         modelcp.load_network(opt['path']['pretrain_model_G'], modelcp.netG)
         
+        
         modelcp.feed_data(val_data, need_GT=with_GT)
         modelcp.test()
 
         if with_GT:
             model_start_visuals = modelcp.get_current_visuals(need_GT=True)
             hr_image = util.tensor2img(model_start_visuals['GT'], mode='rgb')
+            lr_image = util.tensor2img(model_start_visuals['LQ'], mode='rgb')
             result = util.tensor2img(model_start_visuals['rlt'], mode='rgb')
+            
+            # Bic_LQ = F.interpolate(model_start_visuals['LQ'].unsqueeze(0), scale_factor=opt['scale'], mode='bicubic', align_corners=True)
+            # Bic_LQ = util.tensor2img(Bic_LQ[0], mode='rgb')
+            
+            # psnr_rlt = util.calculate_psnr(result, hr_image)
+            # ssim_rlt = util.calculate_ssim(result, hr_image)
             
             psnr_rlt = util.calculate_psnr(result, hr_image)
             ssim_rlt = util.calculate_ssim(result, hr_image)
@@ -147,7 +155,10 @@ def main():
             
         # Save and calculate final image
         # print(os.path.join(maml_train_folder, '{:08d}.png'.format(idx_d)))
-        imageio.imwrite(os.path.join(sub_train_folder, '{}'.format(val_data['filename'][0])), result)
+        # imageio.imwrite(os.path.join(sub_train_folder, 'Bicubic_{}'.format(val_data['filename'][0])), Bic_LQ)
+        imageio.imwrite(os.path.join(sub_train_folder, 'SR_{}'.format(val_data['filename'][0])), result)
+        # imageio.imwrite(os.path.join(sub_train_folder, 'HR_{}'.format(val_data['filename'][0])), hr_image)
+        # imageio.imwrite(os.path.join(sub_train_folder, 'LR_{}'.format(val_data['filename'][0])), lr_image)
 
         if with_GT:
             # name_df = '{}'.format('HAN')

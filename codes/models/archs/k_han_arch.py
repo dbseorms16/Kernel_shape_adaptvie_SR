@@ -105,56 +105,17 @@ class RCAB(nn.Module):
         modules_body = []
         for i in range(2):
             modules_body.append(conv(n_feat, n_feat, kernel_size, bias=bias))
-            modules_body.append(KAWM(n_feat))
             if bn: modules_body.append(nn.BatchNorm2d(n_feat))
             if i == 0: modules_body.append(act)
-            
         modules_body.append(CALayer(n_feat, reduction))
         self.body = nn.Sequential(*modules_body)
         self.res_scale = res_scale
-        
-        
 
     def forward(self, x):
-        res = x[0]
-        for name, midlayer in self.body._modules.items():
-            if type(midlayer).__name__ == 'KAWM':
-                res = midlayer(res, x[1])
-            else:
-                res = midlayer(res)
+        res = self.body(x)
         #res = self.body(x).mul(self.res_scale)
-        res += x[0]
-        return res, x[1]
-
-class KAWM(nn.Module):
-      
-    def __init__(self, in_channel, kernel_size=3):
-
-        super(KAWM, self).__init__()
-        
-        self.transformer = nn.Conv2d(in_channel, in_channel, (3, 1), bias=False,
-                                     padding=(1, 0), groups=in_channel, padding_mode='replicate')
-        
-        self.kernel_transformer = nn.Sequential(
-            nn.Conv2d(1, in_channel*2, 2, padding=0, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=False),
-            nn.AdaptiveAvgPool2d(1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x, kernel):
-        ##kernle and sigmoid
-        b, c,_,_ = x.size()
-        kernel = kernel.reshape(b, 1, 21, 21)
-        y = self.kernel_transformer(kernel)
-        
-        return y * self.transformer(x) + x
-
-def get_valid_padding(kernel_size, dilation):
-    kernel_size = kernel_size + (kernel_size - 1) * (dilation - 1)
-    padding = (kernel_size - 1) // 2
-    return padding
+        res += x
+        return res
 
 ## Residual Group (RG)
 class ResidualGroup(nn.Module):
@@ -166,20 +127,12 @@ class ResidualGroup(nn.Module):
                 conv, n_feat, kernel_size, reduction, bias=True, bn=False, act=nn.ReLU(True), res_scale=1) \
             for _ in range(n_resblocks)]
         modules_body.append(conv(n_feat, n_feat, kernel_size))
-        
         self.body = nn.Sequential(*modules_body)
 
     def forward(self, x):
-        res = x[0]
-        for name, midlayer in self.body._modules.items():
-            if type(midlayer).__name__ == 'RCAB':
-                res, _ = midlayer((res, x[1]))
-            else:
-                res = midlayer(res)
-        # res = self.final_body(res)
-        
-        res += x[0]
-        return res, x[1]
+        res = self.body(x)
+        res += x
+        return res
 
 ## Holistic Attention Network (HAN)
 class HAN(nn.Module):
@@ -223,7 +176,6 @@ class HAN(nn.Module):
         self.la = LAM_Module(n_feats)
         self.last_conv = nn.Conv2d(n_feats*11, n_feats, 3, 1, 1)
         self.last = nn.Conv2d(n_feats*2, n_feats, 3, 1, 1)
-        self.last_KAWM = KAWM(n_feats)
         self.tail = nn.Sequential(*modules_tail)
 
     def forward(self, x, kernel):
@@ -232,11 +184,9 @@ class HAN(nn.Module):
         res = x
         #pdb.set_trace()
         for name, midlayer in self.body._modules.items():
-            if type(midlayer).__name__ == 'ResidualGroup':
-                res, _ = midlayer((res, kernel))
-            else:
-                res = midlayer(res)
-            if name == '0':
+            res = midlayer(res)
+            #print(name)
+            if name=='0':
                 res1 = res.unsqueeze(1)
             else:
                 res1 = torch.cat([res.unsqueeze(1),res1],1)
@@ -250,8 +200,6 @@ class HAN(nn.Module):
         out1 = self.csa(out1)
         out = torch.cat([out1, out2], 1)
         res = self.last(out)
-        ###new recon
-        res = self.last_KAWM(res, kernel)
         
         res += x
         #res = self.csa(res)

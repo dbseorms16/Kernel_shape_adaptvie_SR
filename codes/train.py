@@ -321,9 +321,9 @@ def main():
                             visuals = model.get_current_visuals()
                             rlt_img = util.tensor2img(visuals['rlt'], mode='rgb')  # uint8, RGB
                             gt_img = util.tensor2img(visuals['GT'], mode='rgb')  # uint8, RGB
-                            lq_img = util.tensor2img(visuals['LQ'], mode='rgb')  # uint8, RGB
-                            imageio.imwrite(os.path.join(train_folder, 'LQ_{}'.format(filename)), lq_img)
-                            imageio.imwrite(os.path.join(train_folder, 'hr_{}'.format(filename)), gt_img)
+                            # lq_img = util.tensor2img(visuals['LQ'], mode='rgb')  # uint8, RGB
+                            # imageio.imwrite(os.path.join(train_folder, 'LQ_{}'.format(filename)), lq_img)
+                            # imageio.imwrite(os.path.join(train_folder, 'hr_{}'.format(filename)), gt_img)
                             imageio.imwrite(os.path.join(train_folder, 'sr_{}'.format(filename)), rlt_img)
                             # calculate PSNR
                             psnr += util.calculate_psnr(rlt_img, gt_img)
@@ -353,7 +353,7 @@ def main():
         logger.info('Saving the final model.')
         model.save('latest')
         logger.info('End of training.')
-        tb_logger.close()
+        # tb_logger.close()
 
 
 if __name__ == '__main__':

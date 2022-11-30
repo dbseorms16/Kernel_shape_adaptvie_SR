@@ -1,5 +1,5 @@
 #### general settings
-name: HAN
+name: HAN+4002_with_recon
 use_tb_logger: false
 model: video_base
 distortion: sr
@@ -28,8 +28,8 @@ datasets:
     use_flip: true
     use_rot: true
     color: RGB
-    sigma_x: 0.4
-    sigma_y: 0.4
+    sigma_x: 4.0
+    sigma_y: 0.2
     theta: 0.0
 
 
@@ -37,12 +37,13 @@ datasets:
     name: Vid4
     mode: set_LQGT
     dataroot_GT: F:\DIV2K\BSD100\HR
+    # dataroot_GT: F:\DIV2K\DIV2K_valid_HR
     cache_data: True
     padding: new_info
     degradation_mode: set
     degradation_type: impulse
-    sigma_x: 0.4
-    sigma_y: 0.4
+    sigma_x: 4.0
+    sigma_y: 0.2
     theta: 0.0
 
 
@@ -62,7 +63,7 @@ network_G:
 
 #### path
 path:
-  pretrain_model_G: ~
+  pretrain_model_G: F:\KAWM\pretrained\HAN/HAN_baseline.pth
   strict_load: False
   resume_state: ~
   img_save_path: ../results
@@ -79,17 +80,17 @@ train:
   beta1: 0.9
   beta2: 0.99
   epochs: 1300
-  niter: 100000
+  niter: 22000
   warmup_iter: -1  # -1: no warm up
   lr_steps: [40000, 60000]
   lr_gamma: 0.2
   use_real: False
   pixel_criterion: l1
   pixel_weight: 1.0
-  val_freq: !!float 1000
+  val_freq: !!float 3000
   manual_seed: 0
 
 #### logger
 logger:
   print_freq: 100
-  save_checkpoint_freq: !!float 1e3
+  save_checkpoint_freq: !!float 3000

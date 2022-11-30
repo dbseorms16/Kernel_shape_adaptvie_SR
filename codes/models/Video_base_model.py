@@ -121,46 +121,16 @@ class VideoBaseModel(BaseModel):
             else:
                 optim_params = []
                 for k, v in self.netG.named_parameters():
-                    
                     v.requires_grad = False
                     if k.find('transformer') >= 0:
                     # if k.find('attent') >= 0:
                         v.requires_grad = True
                     
-                    # if 'feature_extraction' in k:
-                    #     v.requires_grad = False
-                        
-                    # if 'recon_trunk' in k:
-                    #     v.requires_grad = False
-                        
-                    # if 'upconv2' in k:
-                    #     v.requires_grad = False
-                        
-                    # if 'HRconv' in k:
-                    #     v.requires_grad = False
-                        
-                    # if 'tsa_fusion' in k:
-                    #     v.requires_grad = False
-                        
-                    # if 'pcd_align' in k:
-                    #     v.requires_grad = False
-                        
-                    # if 'fea_' in k:
-                    #     v.requires_grad = False
-                        
-                    # if 'conv_' in k:
-                    #     v.requires_grad = False
-                    
-                    # if v.requires_grad == True:
-                    #     print(k)
-                    
-                    # if not 'transformer' in k:
-                    #     v.requires_grad = False
                     if v.requires_grad:
                         optim_params.append(v)
-                    else:
-                        if self.rank <= 0:
-                            logger.warning('Params [{:s}] will not optimize.'.format(k))
+                    # else:
+                    #     if self.rank <= 0:
+                    #         logger.warning('Params [{:s}] will not optimize.'.format(k))
 
             if train_opt['optim'] == 'SGD':
                 self.optimizer_G = torch.optim.SGD(optim_params, lr=train_opt['lr_G'], weight_decay=wd_G)

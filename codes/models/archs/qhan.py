@@ -2,6 +2,7 @@ from collections import OrderedDict
 from torch import nn
 import torch
 import numpy as np
+from torch.autograd import Variable
 
 from models.archs.q_layer import ParaCALayer
 from models.archs import common
@@ -53,6 +54,7 @@ class QCALayer(nn.Module):
         super(QCALayer, self).__init__()
         # global average pooling: feature --> point
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.style = 'extended_attention'
         # feature channel downscale and upscale --> channel weight
 
         if reduction < 16:
@@ -103,7 +105,9 @@ class QCALayer(nn.Module):
         self.style = style
 
     def forward(self, x, attributes):
-
+        
+        
+            
         y = self.avg_pool(x)
         if self.style == 'modulate':
             y = self.conv_du(y) * attributes
@@ -161,8 +165,8 @@ class QRCAB(nn.Module):
         self.final_body = QCALayer(channel=n_feat, reduction=reduction, style=style, num_metadata=num_metadata)
         self.pa = pa
         self.q_layer = q_layer
-        if pa:
-            self.pa_node = PALayer(channel=n_feat)
+        # if pa:
+        self.pa_node = PALayer(channel=n_feat)
         if q_layer:
             self.q_node = ParaCALayer(network_channels=n_feat, num_metadata=num_metadata, nonlinearity=True)
 
@@ -172,10 +176,10 @@ class QRCAB(nn.Module):
     def forward(self, x):
         res = self.body(x[0])
         res = self.final_body(res, x[1])
-        if self.pa:
-            res = self.pa_node(res)
-        if self.q_layer:
-            res = self.q_node(res, x[1])
+        # if self.pa:
+        res = self.pa_node(res)
+        # if self.q_layer:
+        #     res = self.q_node(res, x[1])
         res += x[0]
         return res, x[1]
 
@@ -466,15 +470,28 @@ class QSAN(nn.Module):
 
         return x
 
+class PCAEncoder(object):
+    def __init__(self, weight, cuda=False):
+        self.weight = weight #[l^2, k]
+        self.size = self.weight.size()
+        if cuda:
+            self.weight = Variable(self.weight).cuda()
+        else:
+            self.weight = Variable(self.weight)
+
+    def __call__(self, batch_kernel):
+        B, H, W = batch_kernel.size() #[B, l, l]
+        return torch.bmm(batch_kernel.view((B, 1, H * W)), self.weight.expand((B, ) + self.size)).view((B, -1))
 
 class QHAN(nn.Module):
     """
     Modified HAN network to include meta-attention.  Refer to original model for info on parameters.
     """
-    def __init__(self, args, n_resgroups=10, n_resblocks=20, n_feats=64, reduction=16, num_metadata=0,
+    def __init__(self, args, pca, n_resgroups=10, n_resblocks=20, n_feats=64, reduction=16, num_metadata=10,
                  scale=4, n_colors=3, res_scale=1.0, conv=common.default_conv,  num_q_layers_inner_residual=None):
         super(QHAN, self).__init__()
 
+        self.encoder = PCAEncoder(torch.load(pca), cuda=True)
         n_resgroups = n_resgroups
         n_resblocks = n_resblocks
         n_feats = n_feats
@@ -510,7 +527,7 @@ class QHAN(nn.Module):
         self.tail = nn.Sequential(*modules_tail)
 
     def forward(self, x, metadata):
-
+        metadata = self.encoder(metadata)
         x = self.head(x)
         res = x
 

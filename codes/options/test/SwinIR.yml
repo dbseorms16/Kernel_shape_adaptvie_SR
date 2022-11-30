@@ -1,5 +1,5 @@
 #### general settings
-name: SwinIR2002_withKSAM
+name: SwinIR4002_kernelattentiveaaaa
 use_tb_logger: false
 model: video_base
 distortion: sr
@@ -28,22 +28,22 @@ datasets:
     use_flip: true
     use_rot: true
     color: RGB
-    sigma_x: 2.0
-    sigma_y: 0.2
+    sigma_x: 0.2
+    sigma_y: 4.0
     theta: 0.0
 
 
   val:
     name: Vid4
     mode: set_LQGT
-    # dataroot_GT: F:\DIV2K\BSD100\HR
-    dataroot_GT: F:\DIV2K\DIV2K_valid_HR
+    dataroot_GT: F:\DIV2K\BSD100\HR
+    # dataroot_GT: F:\DIV2K\DIV2K_valid_HR
     cache_data: True
     padding: new_info
     degradation_mode: set
     degradation_type: impulse
-    sigma_x: 2.0
-    sigma_y: 0.2
+    sigma_x: 0.2
+    sigma_y: 4.0
     theta: 0.0
 
 
@@ -60,13 +60,14 @@ network_G:
 #### path
 path:
   pretrain_model_G: F:\KAWM\pretrained\SwinIR/SwinIR_0202.pth
+  # pretrain_model_G: F:\KAWM\experiments\SwinIR4002_New_aa/models/1000_G.pth
   strict_load: False
   resume_state: ~
   img_save_path: ../results
 
 #### training settings: learning rate scheme, loss
 train:
-  lr_G: !!float 2e-4
+  lr_G: !!float 2e-5
   lr_scheme: MultiStepLR
   t_mult: 1
   restart_period: 40000  # number of batches for restart to occcur
@@ -76,7 +77,7 @@ train:
   beta1: 0.9
   beta2: 0.99
   epochs: 1300
-  niter: 100000
+  niter: 10000
   warmup_iter: -1  # -1: no warm up
   lr_steps: [40000, 60000]
   lr_gamma: 0.2
@@ -89,4 +90,4 @@ train:
 #### logger
 logger:
   print_freq: 100
-  save_checkpoint_freq: !!float 1e3
+  save_checkpoint_freq: !!float 1000
