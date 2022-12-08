@@ -185,7 +185,7 @@ def main():
 
         ssim_total_avg = avg_ssim_rlt / count 
         # Just calculate the final value of ssim_rlt(i.e. ssim_rlt[1])
-        log_s = '# Validation # Bicubic SSIM: {:.4e}:'.format(ssim_total_avg)
+        log_s = '# Validation # Bicubic SSIM: {:.4f}:'.format(ssim_total_avg)
         print(log_s)
 
 

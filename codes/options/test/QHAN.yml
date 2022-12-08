@@ -1,5 +1,5 @@
 #### general settings
-name: QHAN
+name: QHAN__
 use_tb_logger: false
 model: video_base
 distortion: sr
@@ -11,7 +11,7 @@ gpu_ids: [0]
 datasets:
   train:
     name: Vimeo
-    mode: set_LQGT
+    mode: SETLQGT_dataset_randomblu
     interval_list: [1]
     random_reverse: false
     border_mode: false7
@@ -36,13 +36,13 @@ datasets:
   val:
     name: Vid4
     mode: set_LQGT
-    dataroot_GT: F:\DIV2K\Set5\HR
+    dataroot_GT: F:\DIV2K\BSD100\HR
     cache_data: True
     padding: new_info
     degradation_mode: set
     degradation_type: impulse
-    sigma_x: 0.4
-    sigma_y: 0.4
+    sigma_x: 1.0
+    sigma_y: 0.2
     theta: 0.0
 
 
@@ -63,7 +63,7 @@ network_G:
 
 #### path
 path:
-  pretrain_model_G: F:/KAWM/pretrained/QHAN/train_model_1290.pth
+  pretrain_model_G: F:\KAWM\pretrained\HAN/HAN_baseline.pth
   strict_load: False
   resume_state: ~
   img_save_path: ../results
@@ -87,10 +87,10 @@ train:
   use_real: False
   pixel_criterion: l1
   pixel_weight: 1.0
-  val_freq: !!float 1000
+  val_freq: !!float 5000
   manual_seed: 0
 
 #### logger
 logger:
   print_freq: 100
-  save_checkpoint_freq: !!float 1e3
+  save_checkpoint_freq: !!float 5000

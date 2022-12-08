@@ -60,3 +60,12 @@ python test.py -opt options/test/QHAN.yml
 
 python test.py -opt options/test/QHAN.yml
 
+python test.py -opt options/test/RCAN.yml
+
+python train.py -opt options/test/RCAN.yml
+
+python train.py -opt options/test/QRCAN.yml
+
+python test.py -opt options/test/RCAN.yml
+
+

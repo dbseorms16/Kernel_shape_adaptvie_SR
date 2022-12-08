@@ -21,12 +21,36 @@ class Mlp(nn.Module):
         self.act = act_layer()
         self.fc2 = nn.Linear(hidden_features, out_features)
         self.drop = nn.Dropout(drop)
+        self.KAWM_layers = KAWM(in_channel=hidden_features)
+        # self.KAWM_layers_1 = KAWM(in_channel=out_features)
 
-    def forward(self, x):
+    def forward(self, x, x_size, kernel):
+        H, W = x_size
+        B, C, dim = x.size()
+
+                # self.KAWM_V_layers = nn.ModuleList()
+        # self.KAWM_layers = KAWM(in_channel=dim)
+
+        # for i in range(depth):
+        #     AdaptiveFM = KAWM(in_channel=dim)
+        #     # AdaptiveFM_V = KAWM_V(in_channel=dim)
+        #     # AdaptiveFM = KAWM(in_channel=embed_dim)
+        #     self.KAWM_layers.append(AdaptiveFM)
+            # self.KAWM_V_layers.append(AdaptiveFM_V)
+
         x = self.fc1(x)
+        x = x.view(B, -1, H, W)
+        x = self.KAWM_layers(x, kernel)
+        x = x.view(B, H * W, -1)
+
         x = self.act(x)
         x = self.drop(x)
         x = self.fc2(x)
+        
+        # x = x.view(B, -1, H, W)
+        # x = self.KAWM_layers_1(x, kernel)
+        # x = x.view(B, H * W, -1)
+
         x = self.drop(x)
         return x
 
@@ -214,7 +238,7 @@ class SwinTransformerBlock(nn.Module):
 
         self.register_buffer("attn_mask", attn_mask)
 
-    def forward(self, x, x_size):
+    def forward(self, x, x_size, kernel):
         H, W = x_size
         B, L, C = x.shape
         # assert L == H * W, "input feature has wrong size"
@@ -248,13 +272,12 @@ class SwinTransformerBlock(nn.Module):
             x = torch.roll(shifted_x, shifts=(self.shift_size, self.shift_size), dims=(1, 2))
         else:
             x = shifted_x
-        print(x.size())
         x = x.view(B, H * W, C)
-        print('x.s',x.size())
+        
         
         # FFN
         x = shortcut + self.drop_path(x)
-        a = self.mlp(self.norm2(x))
+        a = self.mlp(self.norm2(x), x_size, kernel)
         x = x + self.drop_path(a)
 
         return x
@@ -412,7 +435,7 @@ class BasicLayer(nn.Module):
             if self.use_checkpoint:
                 x = checkpoint.checkpoint(blk, x, x_size)
             else:
-                x = blk(x, x_size)
+                x = blk(x, x_size, kernel)
                 
                 # x = self.KAWM_layers[index](x, x_size, kernel)
             # x = self.KAWM_layers(x, x_size, kernel)
@@ -453,38 +476,43 @@ class KAWM(nn.Module):
     def __init__(self, in_channel, kernel_size=3):
 
         super(KAWM, self).__init__()
-        # self.encoder = PCAEncoder(pca, cuda=cuda)
         
         self.kernel_transformer = nn.Sequential(
-            nn.Linear(10, in_channel*2),
-            nn.ReLU(),
-            nn.Linear(in_channel*2, in_channel*2),
-            nn.ReLU(),
-            nn.Linear(in_channel*2, in_channel),
+            nn.Conv2d(1, in_channel*2, 2, padding=0, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=False),
+            nn.AdaptiveAvgPool2d(1),
+            nn.Sigmoid()
+        )
+
+        self.kernel_transformer_v = nn.Sequential(
+            nn.Conv2d(1, in_channel*2, 2, padding=0, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=False),
+            nn.AdaptiveAvgPool2d(1),
             nn.Sigmoid()
         )
                 
         self.transformer = nn.Conv2d(in_channel, in_channel, (3, 1), bias=False,
-                                     padding=(1, 0), groups=in_channel, padding_mode='replicate')
+                                     padding=1, groups=in_channel, padding_mode='replicate')
+        self.transformer_v = nn.Conv2d(in_channel, in_channel, (1, 3), bias=False,
+                                padding=(0,1), groups=in_channel, padding_mode='replicate')
+
 
         constant_init(self.transformer, val=0)
+        constant_init(self.transformer_v, val=0)
         
-    def forward(self, x, x_size, kernel):
-        ##kernle and sigmoid
-        b, c, dim = x.size()
-        h, w = x_size
+    def forward(self, x, kernel):
+        b, c,_,_ = x.size()
+        kernel = kernel.reshape(b, 1, 21, 21)
         y = self.kernel_transformer(kernel)
+        modulated_x = self.transformer(x) * y
+
+        y = self.kernel_transformer_v(kernel)
+        modulated_y = self.transformer_v(x) * y
         
-        x = x.reshape(b, -1, h, w)
-        shortcut = x
-        # x = self.transformer(x) * y
-        x = self.transformer(x) * y[:, :, None, None] # works
-        
-        x += shortcut
-        x = x.reshape(b, c, dim)
-        
-        
-        return x
+        return x + modulated_x + modulated_y
+
 
 class RSTB(nn.Module):
     """Residual Swin Transformer Block (RSTB).
@@ -813,22 +841,12 @@ class SwinIR(nn.Module):
             # for classical SR
             self.conv_before_upsample = nn.Sequential(nn.Conv2d(embed_dim, num_feat, 3, 1, 1),
                                                       nn.LeakyReLU(inplace=True))
+            self.conv_befor_transformer = KAWM(num_feat) 
             self.upsample = Upsample(upscale, num_feat)
             self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
-        elif self.upsampler == 'pixelshuffledirect':
-            # for lightweight SR (to save parameters)
-            self.upsample = UpsampleOneStep(upscale, embed_dim, num_out_ch,
-                                            (patches_resolution[0], patches_resolution[1]))
-        elif self.upsampler == 'nearest+conv':
-            # for real-world SR (less artifacts)
-            self.conv_before_upsample = nn.Sequential(nn.Conv2d(embed_dim, num_feat, 3, 1, 1),
-                                                      nn.LeakyReLU(inplace=True))
-            self.conv_up1 = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
-            if self.upscale == 4:
-                self.conv_up2 = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
-            self.conv_hr = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
-            self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
-            self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+            
+            self.before_transformer = KAWM(embed_dim) 
+            self.conv_after_body_transformer = KAWM(embed_dim) 
         else:
             # for image denoising and JPEG compression artifact reduction
             self.conv_last = nn.Conv2d(embed_dim, num_out_ch, 3, 1, 1)
@@ -837,27 +855,6 @@ class SwinIR(nn.Module):
         
         
         self.encoder = PCAEncoder(torch.load('../pca_matrix_x4.pth'), cuda=True)
-
-    def forward_features(self, x, kernel):
-        b, c, w, h = x.size()
-        x_size = (x.shape[2], x.shape[3])
-        x = self.patch_embed(x)
-        
-        if self.ape:
-            x = x + self.absolute_pos_embed
-        x = self.pos_drop(x)
-
-        
-        kernel = kernel.reshape(b, 1, 21, 21)
-        kernel = self.encoder(kernel)
-        
-        for layer in self.layers:
-            x = layer(x, x_size, kernel)
-        x = self.norm(x)  # B L C
-        x = self.patch_unembed(x, x_size)
-        
-
-        return x
 
     def forward(self, x, kernel):
         H, W = x.shape[2:]
@@ -869,26 +866,17 @@ class SwinIR(nn.Module):
         if self.upsampler == 'pixelshuffle':
             # for classical SR
             x = self.conv_first(x)
+
+            x = self.before_transformer(x, kernel)
+            
             x = self.conv_after_body(self.forward_features(x, kernel)) + x
             
-            x = self.conv_before_upsample(x)
+            x = self.conv_after_body_transformer(x, kernel)
             
+            x = self.conv_before_upsample(x)
+            x = self.conv_befor_transformer(x, kernel)
+            x = nn.LeakyReLU()(x)
             x = self.conv_last(self.upsample(x))
-            
-        elif self.upsampler == 'pixelshuffledirect':
-            # for lightweight SR
-            x = self.conv_first(x)
-            x = self.conv_after_body(self.forward_features(x)) + x
-            x = self.upsample(x)
-        elif self.upsampler == 'nearest+conv':
-            # for real-world SR
-            x = self.conv_first(x)
-            x = self.conv_after_body(self.forward_features(x)) + x
-            x = self.conv_before_upsample(x)
-            x = self.lrelu(self.conv_up1(torch.nn.functional.interpolate(x, scale_factor=2, mode='nearest')))
-            if self.upscale == 4:
-                x = self.lrelu(self.conv_up2(torch.nn.functional.interpolate(x, scale_factor=2, mode='nearest')))
-            x = self.conv_last(self.lrelu(self.conv_hr(x)))
         else:
             # for image denoising and JPEG compression artifact reduction
             x_first = self.conv_first(x)
@@ -899,6 +887,25 @@ class SwinIR(nn.Module):
 
         return x[:, :, :H*self.upscale, :W*self.upscale]
 
+    def forward_features(self, x, kernel):
+        b, c, w, h = x.size()
+        x_size = (x.shape[2], x.shape[3])
+        x = self.patch_embed(x)
+        
+        if self.ape:
+            x = x + self.absolute_pos_embed
+        x = self.pos_drop(x)
+
+        # kernel = kernel.reshape(b, 1, 21, 21)
+        # kernel = self.encoder(kernel)
+        
+        for layer in self.layers:
+            x = layer(x, x_size, kernel)
+        x = self.norm(x)  # B L C
+        x = self.patch_unembed(x, x_size)
+        
+        return x
+    
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
             trunc_normal_(m.weight, std=.02)

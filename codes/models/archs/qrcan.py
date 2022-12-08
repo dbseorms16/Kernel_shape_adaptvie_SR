@@ -6,30 +6,81 @@ from torch.autograd import Variable
 
 from models.archs.q_layer import ParaCALayer
 from models.archs import common
+from models.archs.qhan import PCAEncoder
+
 # from models.advanced.SAN_blocks import Nonlocal_CA
 # from models.attention_manipulators.qsan_blocks import QLSRAG
-from models.archs.han_arch import LAM_Module, CSAM_Module
 
+class QRCAN(nn.Module):
+    def __init__(self, args, pca, n_resblocks=20, n_resgroups=10, n_feats=64, in_feats=3, out_feats=3, scale=4, reduction=16,
+                 res_scale=1.0, style='standard', num_metadata=10, include_pixel_attention=False,
+                 selective_meta_blocks=None, num_q_layers_inner_residual=None, include_q_layer=True, **kwargs):
 
-class PALayer(nn.Module):
-    # adapted from https://github.com/zhilin007/FFA-Net/blob/master/net/models/FFA.py
-    def __init__(self, channel):
-        super(PALayer, self).__init__()
-        self.pa = nn.Sequential(
-            nn.Conv2d(channel, channel // 8, 1, padding=0, bias=True),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(channel // 8, 1, 1, padding=0, bias=True),
-            nn.Sigmoid()
-        )
+        super(QRCAN, self).__init__()
 
-    def forward(self, x):
-        y = self.pa(x)
-        return x * y
+        kernel_size = 3
+        act = nn.ReLU(True)
+        self.style = style
 
-    def forensic(self, x):
-        y = self.pa(x)
-        return x*y, y.cpu().data.numpy().squeeze()
+        # define head module
+        modules_head = [common.default_conv(in_feats, n_feats, kernel_size)]
 
+        # define body module
+        if selective_meta_blocks is None:
+            modules_body = [
+                QResidualGroup(common.default_conv, n_feats, kernel_size, reduction, style=style,
+                               num_metadata=num_metadata, pa=include_pixel_attention, q_layer=include_q_layer,
+                               act=act, res_scale=res_scale, n_resblocks=n_resblocks,
+                               num_q_layers=num_q_layers_inner_residual) for _ in range(n_resgroups)]
+        else:
+            modules_body = []
+
+            for index in range(n_resgroups):
+                if selective_meta_blocks[index]:
+                    include_q = include_q_layer
+                else:
+                    include_q = False
+                modules_body.append(
+                    QResidualGroup(common.default_conv, n_feats, kernel_size, reduction, style=style,
+                                   num_metadata=num_metadata, pa=include_pixel_attention, q_layer=include_q,
+                                   act=act, res_scale=res_scale, n_resblocks=n_resblocks,
+                                   num_q_layers=num_q_layers_inner_residual))
+
+        self.final_body = common.default_conv(n_feats, n_feats, kernel_size)
+
+        # define tail module
+        modules_tail = [
+            common.Upsampler(common.default_conv, scale, n_feats, act=False),
+            common.default_conv(n_feats, out_feats, kernel_size)]
+
+        self.head = nn.Sequential(*modules_head)
+        self.body = nn.Sequential(*modules_body)
+        self.tail = nn.Sequential(*modules_tail)
+        self.encoder = PCAEncoder(torch.load(pca), cuda=True)
+        
+
+    def forward(self, x, metadata):
+        metadata = self.encoder(metadata)
+        x = self.head(x)
+        res, *_ = self.body((x, metadata))
+        res = self.final_body(res)
+        res += x
+        x = self.tail(res)
+
+        return x
+
+    def forensic(self, x, qpi, *args, **kwargs):
+        x = self.head(x)
+        data = OrderedDict()
+        res = x
+        for index, module in enumerate(self.body):
+            res, res_forensic_data = module.forensic(res, qpi)
+            for rcab_index, rcab_forensic_data in enumerate(res_forensic_data):
+                data['R%d.C%d' % (index, rcab_index)] = rcab_forensic_data
+        res = self.final_body(res)
+        res += x
+        x = self.tail(res)
+        return x, data
 
 class QRCAB(nn.Module):
     """
@@ -226,157 +277,3 @@ class QCALayer(nn.Module):
             raise NotImplementedError
 
         return x * y
-
-class ParamResBlock(nn.Module):
-    def __init__(
-            self, conv, n_feats, n_params, kernel_size, act=nn.ReLU(True),
-            bias=True, res_scale=1.0, q_layer_nonlinearity=False):
-
-        super(ParamResBlock, self).__init__()
-        m = []
-        for i in range(2):
-            m.append(conv(n_feats, n_feats, kernel_size, bias=bias))
-            if i == 0:
-                m.append(act)
-        self.body = nn.Sequential(*m)
-        self.attention_layer = ParaCALayer(n_feats, n_params, nonlinearity=q_layer_nonlinearity)
-
-        self.res_scale = res_scale
-
-    def forward(self, x):
-
-        params = x[1]
-        res = self.body(x[0])
-        res = res.mul(self.res_scale)
-        res = self.attention_layer(res, x[1])
-        res += x[0]
-
-        return res, params
-
-
-class QEDSR(nn.Module):
-    """
-    modified EDSR to allow insertion of meta-attention.  Refer to original EDSR for info on function inputs.
-    """
-    def __init__(self,
-                 in_features=3, out_features=3, num_features=64, input_para=1,
-                 num_blocks=16, scale=4, res_scale=0.1, q_layer_nonlinearity=False, **kwargs):
-        super(QEDSR, self).__init__()
-
-        n_resblocks = num_blocks
-        n_feats = num_features
-        kernel_size = 3
-
-        # define head module
-        self.head = common.default_conv(in_features, n_feats, kernel_size)
-
-        # define body module
-        m_body = [
-            ParamResBlock(
-                common.default_conv, n_feats, input_para, kernel_size, res_scale=res_scale,
-                q_layer_nonlinearity=q_layer_nonlinearity
-            ) for _ in range(n_resblocks)
-        ]
-        self.final_body = common.default_conv(n_feats, n_feats, kernel_size)
-
-        # define tail module
-        m_tail = [
-            common.Upsampler(common.default_conv, scale, n_feats),
-            common.default_conv(n_feats, out_features, kernel_size)
-        ]
-
-        self.body = nn.Sequential(*m_body)
-        self.tail = nn.Sequential(*m_tail)
-
-    def forward(self, x, metadata):
-        x = self.head(x)
-        res, _ = self.body((x, metadata))
-        res = self.final_body(res)
-        res += x
-        x = self.tail(res)
-        return x
-class PCAEncoder(object):
-    def __init__(self, weight, cuda=False):
-        self.weight = weight #[l^2, k]
-        self.size = self.weight.size()
-        if cuda:
-            self.weight = Variable(self.weight).cuda()
-        else:
-            self.weight = Variable(self.weight)
-
-    def __call__(self, batch_kernel):
-        B, H, W = batch_kernel.size() #[B, l, l]
-        return torch.bmm(batch_kernel.view((B, 1, H * W)), self.weight.expand((B, ) + self.size)).view((B, -1))
-
-class QHAN(nn.Module):
-    """
-    Modified HAN network to include meta-attention.  Refer to original model for info on parameters.
-    """
-    def __init__(self, args, pca, n_resgroups=10, n_resblocks=20, n_feats=64, reduction=16, num_metadata=10,
-                 scale=4, n_colors=3, res_scale=1.0, conv=common.default_conv,  num_q_layers_inner_residual=None):
-        super(QHAN, self).__init__()
-
-        self.encoder = PCAEncoder(torch.load(pca), cuda=True)
-        n_resgroups = n_resgroups
-        n_resblocks = n_resblocks
-        n_feats = n_feats
-        kernel_size = 3
-        reduction = reduction
-        scale = scale
-        act = nn.ReLU(True)
-
-        # define head module
-        modules_head = [conv(n_colors, n_feats, kernel_size)]
-
-        # define body module
-        modules_body = [
-            QResidualGroup(
-                conv, n_feats, kernel_size, reduction, act=act, res_scale=res_scale, style='standard',
-                num_metadata=num_metadata, pa=False, q_layer=True, n_resblocks=n_resblocks,
-                num_q_layers=num_q_layers_inner_residual)
-            for _ in range(n_resgroups)]
-
-        modules_body.append(conv(n_feats, n_feats, kernel_size))
-
-        # define tail module
-        modules_tail = [
-            common.Upsampler(conv, scale, n_feats, act=False),
-            conv(n_feats, n_colors, kernel_size)]
-
-        self.head = nn.Sequential(*modules_head)
-        self.body = nn.Sequential(*modules_body)
-        self.csa = CSAM_Module(n_feats)
-        self.la = LAM_Module(n_feats)
-        self.last_conv = nn.Conv2d(n_feats*11, n_feats, 3, 1, 1)
-        self.last = nn.Conv2d(n_feats*2, n_feats, 3, 1, 1)
-        self.tail = nn.Sequential(*modules_tail)
-
-    def forward(self, x, metadata):
-        metadata = self.encoder(metadata)
-        x = self.head(x)
-        res = x
-
-        for name, midlayer in self.body._modules.items():
-            if type(midlayer).__name__ == 'QResidualGroup':
-                res, _ = midlayer((res, metadata))
-            else:
-                res = midlayer(res)
-            if name == '0':
-                res1 = res.unsqueeze(1)
-            else:
-                res1 = torch.cat([res.unsqueeze(1),res1],1)
-
-        out1 = res
-
-        res = self.la(res1)
-        out2 = self.last_conv(res)
-
-        out1 = self.csa(out1)
-        out = torch.cat([out1, out2], 1)
-        res = self.last(out)
-
-        res += x
-
-        x = self.tail(res)
-
-        return x

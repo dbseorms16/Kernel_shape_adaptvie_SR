@@ -34,6 +34,8 @@ def create_dataset(dataset_opt, **kwargs):
         from data.baseline.LQGT_dataset import LQGTDataset as D
     elif mode == 'set_LQGT':
         from data.baseline.SETLQGT_dataset import SETLQGTDataset as D
+    elif mode == 'SETLQGT_dataset_randomblur':
+        from data.baseline.SETLQGT_dataset_randomblur import SETLQGT_dataset_randomblur as D
     else:
         raise NotImplementedError('Dataset [{:s}] is not recognized.'.format(mode))
     dataset = D(dataset_opt, **kwargs)

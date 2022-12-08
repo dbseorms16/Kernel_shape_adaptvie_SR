@@ -97,34 +97,37 @@ class CSAM_Module(nn.Module):
 
 ## Residual Channel Attention Block (RCAB)
 class RCAB(nn.Module):
+    """
+    Based on implementation in https://github.com/thstkdgus35/EDSR-PyTorch
+    """
     def __init__(
-        self, conv, n_feat, kernel_size, reduction,
-        bias=True, bn=False, act=nn.ReLU(True), res_scale=1):
+            self, conv, n_feat, kernel_size, reduction,
+            bias=True, bn=False, act=nn.ReLU(True), res_scale=1):
 
         super(RCAB, self).__init__()
         modules_body = []
+        self.kawm = KAWM(n_feat)
+        
         for i in range(2):
             modules_body.append(conv(n_feat, n_feat, kernel_size, bias=bias))
-            modules_body.append(KAWM(n_feat))
-            if bn: modules_body.append(nn.BatchNorm2d(n_feat))
-            if i == 0: modules_body.append(act)
-            
+            if bn:
+                modules_body.append(nn.BatchNorm2d(n_feat))
+            if i == 0:
+                modules_body.append(act)
         modules_body.append(CALayer(n_feat, reduction))
         self.body = nn.Sequential(*modules_body)
         self.res_scale = res_scale
-        
-        
 
     def forward(self, x):
         res = x[0]
         for name, midlayer in self.body._modules.items():
-            if type(midlayer).__name__ == 'KAWM':
-                res = midlayer(res, x[1])
-            else:
-                res = midlayer(res)
+            res = midlayer(res)
+            if name == '0' and type(midlayer).__name__ == 'Conv2d':
+                res = self.kawm(res, x[1])
         #res = self.body(x).mul(self.res_scale)
         res += x[0]
         return res, x[1]
+
 
 class KAWM(nn.Module):
       
@@ -135,34 +138,50 @@ class KAWM(nn.Module):
         self.transformer = nn.Conv2d(in_channel, in_channel, (3, 1), bias=False,
                                      padding=(1, 0), groups=in_channel, padding_mode='replicate')
         
-        # self.kernel_transformer = nn.Sequential(
-        #     nn.Conv2d(1, in_channel*2, 2, padding=0, bias=False),
-        #     nn.ReLU(inplace=True),
-        #     nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=False),
-        #     nn.AdaptiveAvgPool2d(1),
-        #     nn.Sigmoid()
-        # )
-        
         self.kernel_transformer = nn.Sequential(
-            nn.Linear(10, in_channel*2),
-            nn.ReLU(),
-            nn.Linear(in_channel*2, in_channel*2),
-            nn.ReLU(),
-            nn.Linear(in_channel*2, in_channel),
+            nn.Conv2d(1, in_channel*2, 2, padding=0, bias=True),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=True),
+            nn.AdaptiveAvgPool2d(1),
             nn.Sigmoid()
         )
+        
+        constant_init(self.transformer, val=0)
 
+        # self.transformer_v = nn.Conv2d(in_channel, in_channel, (1, 3), bias=False,
+        #                              padding=(0, 1), groups=in_channel, padding_mode='replicate')
+        
+        # self.kernel_transformer_v = nn.Sequential(
+        #     nn.Conv2d(1, in_channel*2, 2, padding=0, bias=True),
+        #     nn.ReLU(inplace=True),
+        #     nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=True),
+        #     nn.AdaptiveAvgPool2d(1),
+        #     nn.Sigmoid()
+        # )        
+        # constant_init(self.transformer_v, val=0)
+        
     def forward(self, x, kernel):
-        ##kernle and sigmoid
         b, c,_,_ = x.size()
-        # kernel = kernel.reshape(b, 1, 21, 21)
-        # y = self.kernel_transformer(kernel)
+        # dtype =  torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
+        # x = torch.rot90(x, 1, [2,3])
         
-        y = self.kernel_transformer(kernel)
-        res = self.transformer(x) * y[:, :, None, None] # works
         
-        # return y * self.transformer(x) + x
-        return res + x
+        kernel = kernel.reshape(b, 1, 21, 21)
+        # kernel = torch.rot90(kernel, -1, [2,3])
+        y = self.kernel_transformer(kernel) * 0.25
+        moduled_x = self.transformer(x) * y 
+        
+        # y = self.kernel_transformer_v(kernel) 
+        # moduled_y = self.transformer_v(x) * y 
+        
+        # x = x + moduled_x + moduled_y
+        x = x + moduled_x 
+        # x = x 
+        # x = x + moduled_x + moduled_y 
+
+        # x = torch.rot90(x, -1, [2,3])
+        
+        return x 
 
 def get_valid_padding(kernel_size, dilation):
     kernel_size = kernel_size + (kernel_size - 1) * (dilation - 1)
@@ -250,17 +269,13 @@ class HAN(nn.Module):
         self.la = LAM_Module(n_feats)
         self.last_conv = nn.Conv2d(n_feats*11, n_feats, 3, 1, 1)
         self.last = nn.Conv2d(n_feats*2, n_feats, 3, 1, 1)
-        self.last_KAWM = KAWM(n_feats)
         self.tail = nn.Sequential(*modules_tail)
-        
-        self.encoder = PCAEncoder(torch.load('../pca_matrix_x4.pth'), cuda=True)
         
 
     def forward(self, x, kernel):
         # x = self.sub_mean(x)
         b, c, w, h = x.size()
         kernel = kernel.reshape(b, 1, 21, 21)
-        kernel = self.encoder(kernel)
         
         x = self.head(x)
         res = x
@@ -284,8 +299,6 @@ class HAN(nn.Module):
         out1 = self.csa(out1)
         out = torch.cat([out1, out2], 1)
         res = self.last(out)
-        ###new recon
-        res = self.last_KAWM(res, kernel)
         
         res += x
         #res = self.csa(res)
@@ -320,3 +333,8 @@ class HAN(nn.Module):
     #         missing = set(own_state.keys()) - set(state_dict.keys())
     #         if len(missing) > 0:
     #             raise KeyError('missing keys in state_dict: "{}"'.format(missing))
+def constant_init(module, val, bias=0):
+    if hasattr(module, 'weight') and module.weight is not None:
+        nn.init.constant_(module.weight, val)
+    if hasattr(module, 'bias') and module.bias is not None:
+        nn.init.constant_(module.bias, bias)

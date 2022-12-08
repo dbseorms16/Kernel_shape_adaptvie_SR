@@ -22,13 +22,14 @@ class ParaCALayer(nn.Module):
         layers = []
         multiplier = num_layers
         inputs = [num_metadata]
-
+        self.num_metadata = num_metadata 
+        self.network_channels = network_channels 
         for i in range(num_layers):
             if num_metadata > 15:
                 inputs.append((network_channels-num_metadata)//multiplier + num_metadata)
             else:
                 inputs.append(network_channels//multiplier)
-            layers.append(nn.Conv2d(inputs[i], inputs[i+1], 1, padding=0, bias=True))
+            layers.append(nn.Linear(inputs[i], inputs[i+1]))
             if nonlinearity and multiplier != 1:
                 layers.append(nn.ReLU(inplace=True))
             multiplier -= 1
@@ -37,13 +38,10 @@ class ParaCALayer(nn.Module):
         self.attribute_integrator = nn.Sequential(*layers)
 
     def forward(self, x, attributes):
-
         y = self.attribute_integrator(attributes)
-
-        return x * y
+        return x * y[:,:, None, None]
 
     def forensic(self, x, attributes):
-
         y = self.attribute_integrator(attributes)
 
         return x * y, y.cpu().data.numpy().squeeze()

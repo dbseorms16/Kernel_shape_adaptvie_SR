@@ -42,13 +42,17 @@ def define_G(opt):
     elif which_model == 'HAN':
         import models.archs.han_arch as han_arch
         netG = han_arch.HAN(args=opt_net)
+    
+    elif which_model == 'RCAN':
+        import models.archs.rcan_arch as rcan_arch
+        netG = rcan_arch.RCAN(args=opt_net)
 
     elif which_model == 'SwinIR':
         import models.archs.swinir_arch as swinir_arch
         netG = swinir_arch.SwinIR(upscale=opt_net['scale'], in_chans=3, img_size=opt_net['training_patch_size'], window_size=8,
                     img_range=1., depths=[6, 6, 6, 6, 6, 6], embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6],
                     mlp_ratio=2, upsampler='pixelshuffle', resi_connection='1conv')
-    
+        
     elif which_model == 'HAT':
         import models.archs.hat_arch as hat_arch
         netG = hat_arch.HAT()
@@ -60,6 +64,11 @@ def define_G(opt):
     elif which_model == 'QHAN':
         import models.archs.qhan as qhan
         netG = qhan.QHAN(args=opt_net, pca=opt_net['pca_matrix'])
+    
+    elif which_model == 'QRCAN':
+        import models.archs.qrcan as qrcan
+        netG = qrcan.QRCAN(args=opt_net, pca=opt_net['pca_matrix'])
+        
         
     else:
         raise NotImplementedError('Generator model [{:s}] not recognized'.format(which_model))

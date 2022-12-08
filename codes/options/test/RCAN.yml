@@ -1,9 +1,9 @@
 #### general settings
-name: V_V4_TOF
+name: RCAN_fix-VV
 use_tb_logger: false
 model: video_base
 distortion: sr
-scale: 2
+scale: 4
 cpu: false
 gpu_ids: [0]
 
@@ -11,89 +11,87 @@ gpu_ids: [0]
 datasets:
   train:
     name: Vimeo
-    mode: video_test
+    mode: set_LQGT
     interval_list: [1]
     random_reverse: false
     border_mode: false7
     data_root: '../dataset'
+    dataroot_GT: F:\DIV2K\div2k+flick
     cache_data: True
     padding: new_info
     img_type: img
-
-    N_frames: 7
     use_shuffle: true
     n_workers: 3  # per GPU
-    batch_size: 4
+    batch_size: 8
+    patch_size: 64
     kernel_size: 21
     use_flip: true
     use_rot: true
     color: RGB
+    sigma_x: 0.2
+    sigma_y: 4.0
+    theta: 0.0
 
 
   val:
     name: Vid4
-    mode: video_test
-    # dataroot_GT: F:/Vid4_GTx2
-    dataroot_GT: F:/Vid4/GT
+    mode: set_LQGT
+    # dataroot_GT: F:\DIV2K\BSD100\HR
+    dataroot_GT: F:\DIV2K\Set5\HR
+    # dataroot_GT: F:\DIV2K\DIV2K_valid_HR
     cache_data: True
-    N_frames: 7
     padding: new_info
-
     degradation_mode: set
     degradation_type: impulse
-    sigma_x: 0.4
-    sigma_y: 0.8
-    theta: 0
+    sigma_x: 4.0
+    sigma_y: 4.0
+    theta: 0.0
+
 
 #### network structures
 network_G:
-  which_model_G: TOF
+  which_model_G: RCAN
+  n_resgroups: 10
+  n_feats : 64
+  reduction : 16
+  scale : 4
+  n_colors: 3
+  rgb_range: 255
+  n_colors: 3
+  res_scale: 1
 
-network_E:
-  which_model_E: MFDN
-  mode: video
-  nf: 64
-  in_nc: 3
 
 #### path
 path:
-  VSR_G: F:\DynaVSR-master\experiments\Pretrain_FT_TOF_V_S2_0420_1x3\models/10000_G.pth
+  # pretrain_model_G: F:\KAWM\pretrained\RCAN/RCAN0202.pth  
+  pretrain_model_G: F:\KAWM\pretrained\RCAN/RCAN0240.pth
   strict_load: False
   resume_state: ~
   img_save_path: ../results
 
 #### training settings: learning rate scheme, loss
 train:
-  lr_G: !!float 1e-5
+  lr_G: !!float 1e-4
   lr_scheme: MultiStepLR
+  t_mult: 1
+  restart_period: 40000  # number of batches for restart to occcur
+  eta_min: !!float 1e-7
+
   optim: Adam
   beta1: 0.9
   beta2: 0.99
-  epochs: 20
-  niter: 30000
+  epochs: 1300
+  niter: 100000
   warmup_iter: -1  # -1: no warm up
-  lr_steps: [20000, 25000]
+  lr_steps: [40000, 60000]
   lr_gamma: 0.2
-  loss_ftn: l1  # Loss function for updating KE model
-  use_real: false
-
-  maml:
-    use_patch: false
-    num_patch: 3
-    patch_size: 96
-    optimizer: Adam
-    lr_alpha: !!float 1e-5
-    beta1: 0.9
-    beta2: 0.99
-    adapt_iter: 1
-
+  use_real: False
   pixel_criterion: l1
   pixel_weight: 1.0
-  val_freq: !!float 500 #1e3
-
+  val_freq: !!float 1000
   manual_seed: 0
 
 #### logger
 logger:
-  print_freq: 1
-  save_checkpoint_freq: !!float 500 # 1e3
+  print_freq: 100
+  save_checkpoint_freq: !!float 1000

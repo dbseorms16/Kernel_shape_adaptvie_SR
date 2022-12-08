@@ -257,7 +257,67 @@ def flipx4_forward(model, inp):
 ####################
 # metric
 ####################
+import matplotlib.pyplot as plt
+import imageio
 
+def save_tenosor2_img(tensor, path=None, min_max=(0, 1)):
+    # tensor = tensor.float().cpu().clamp_(*min_max)
+    tensor = tensor.float().cpu().numpy()
+    # tensor = (tensor - min_max[0]) / (min_max[1] - min_max[0])  # to range [0,1]
+    
+    # img = tensor.numpy().astype(np.uint8)
+    
+    plt.clf()
+    plt.axis('off')
+    ax = plt.subplot(111)
+    plt.imshow(tensor, vmin=tensor.min(), vmax=tensor.max())
+    ax = plt.gca()
+    ax.axes.xaxis.set_visible(False)
+    ax.axes.yaxis.set_visible(False)
+    plt.axis('off'), plt.xticks([]), plt.yticks([])
+    plt.tight_layout()
+    fig = plt.gcf()
+    ##
+    # plt.colorbar()
+    # plt.clim(0,1)
+    ##
+    fig.set_size_inches(1,1)
+    plt.savefig(os.path.join('../visualization', '{}_att.png'.format(path)),  bbox_inches='tight', pad_inches=0)
+    
+    return tensor
+
+
+def tensor2img(tensor, out_type=np.uint8, min_max=(0, 1), mode='bgr'):
+    '''
+    Converts a torch Tensor into an image Numpy array
+    Input: 4D(B,(3/1),H,W), 3D(C,H,W), or 2D(H,W), any range, RGB channel order
+    Output: 3D(H,W,C) or 2D(H,W), [0,255], np.uint8 (default)
+    '''
+    tensor = tensor.squeeze().float().cpu().clamp_(*min_max)  # clamp
+    tensor = (tensor - min_max[0]) / (min_max[1] - min_max[0])  # to range [0,1]
+    n_dim = tensor.dim()
+    if n_dim == 4:
+        n_img = len(tensor)
+        img_np = make_grid(tensor, nrow=int(math.sqrt(n_img)), normalize=False).numpy()
+        if mode == 'rgb':
+            img_np = np.transpose(img_np, (1, 2, 0))  # HWC, RGB
+        else:
+            img_np = np.transpose(img_np[[2, 1, 0], :, :], (1, 2, 0))  # HWC, BGR
+    elif n_dim == 3:
+        img_np = tensor.numpy()
+        if mode == 'rgb':
+            img_np = np.transpose(img_np, (1, 2, 0))  # HWC, RGB
+        else:
+            img_np = np.transpose(img_np[[2, 1, 0], :, :], (1, 2, 0))  # HWC, BGR
+    elif n_dim == 2:
+        img_np = tensor.numpy()
+    else:
+        raise TypeError(
+            'Only support 4D, 3D and 2D tensor. But received with dimension: {:d}'.format(n_dim))
+    if out_type == np.uint8:
+        img_np = (img_np * 255.0).round()
+        # Important. Unlike matlab, numpy.unit8() WILL NOT round by default.
+    return img_np.astype(out_type)
 
 def calculate_psnr(img1, img2):
     # img1 and img2 have range [0, 255]

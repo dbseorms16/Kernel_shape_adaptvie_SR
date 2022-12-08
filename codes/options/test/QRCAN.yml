@@ -1,5 +1,5 @@
 #### general settings
-name: SwinIR4002_1208_die
+name: QRCAN
 use_tb_logger: false
 model: video_base
 distortion: sr
@@ -11,7 +11,7 @@ gpu_ids: [0]
 datasets:
   train:
     name: Vimeo
-    mode: set_LQGT
+    mode: SETLQGT_dataset_randomblur
     interval_list: [1]
     random_reverse: false
     border_mode: false7
@@ -21,15 +21,15 @@ datasets:
     padding: new_info
     img_type: img
     use_shuffle: true
-    n_workers: 3  # per GPU
+    n_workers: 8  # per GPU
     batch_size: 8
     patch_size: 64
     kernel_size: 21
     use_flip: true
     use_rot: true
     color: RGB
-    sigma_x: 4.0
-    sigma_y: 0.2
+    sigma_x: 0.4
+    sigma_y: 0.4
     theta: 0.0
 
 
@@ -37,7 +37,6 @@ datasets:
     name: Vid4
     mode: set_LQGT
     dataroot_GT: F:\DIV2K\BSD100\HR
-    # dataroot_GT: F:\DIV2K\DIV2K_valid_HR
     cache_data: True
     padding: new_info
     degradation_mode: set
@@ -49,25 +48,28 @@ datasets:
 
 #### network structures
 network_G:
-  which_model_G: SwinIR
+  which_model_G: QRCAN
+  n_resgroups: 10
+  n_feats : 64
+  reduction : 16
   scale : 4
-  in_chans : 3
-  training_patch_size : 64
-  window_size : 8
-  img_rage : 1.
+  n_colors: 3
+  rgb_range: 255
+  n_colors: 3
+  res_scale: 1
+  pca_matrix : ../pretrained/pca_matrix.pth
 
 
 #### path
 path:
-  pretrain_model_G: F:\KAWM\pretrained\SwinIR/SwinIR_0202.pth
-  # pretrain_model_G: F:\KAWM\experiments\SwinIR4002_New_aa/models/1000_G.pth
+  pretrain_model_G: 
   strict_load: False
   resume_state: ~
   img_save_path: ../results
 
 #### training settings: learning rate scheme, loss
 train:
-  lr_G: !!float 2e-4
+  lr_G: !!float 1e-4
   lr_scheme: MultiStepLR
   t_mult: 1
   restart_period: 40000  # number of batches for restart to occcur
@@ -76,18 +78,18 @@ train:
   optim: Adam
   beta1: 0.9
   beta2: 0.99
-  epochs: 130000
-  niter: 1000000
+  epochs: 1300
+  niter: 100000
   warmup_iter: -1  # -1: no warm up
   lr_steps: [40000, 60000]
   lr_gamma: 0.2
   use_real: False
   pixel_criterion: l1
   pixel_weight: 1.0
-  val_freq: !!float 3000
+  val_freq: !!float 5000
   manual_seed: 0
 
 #### logger
 logger:
   print_freq: 100
-  save_checkpoint_freq: !!float 3000
+  save_checkpoint_freq: !!float 5000
