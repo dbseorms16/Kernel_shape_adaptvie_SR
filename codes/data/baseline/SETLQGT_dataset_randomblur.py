@@ -70,9 +70,10 @@ class SETLQGT_dataset_randomblur(data.Dataset):
         sig_max = float(4.1)
         sig_min = float(0.1)
         sigma_x = sig_min + np.round((sig_max-sig_min)*np.random.rand(), 1)
-        sigma_y = sig_min + np.round((sig_max-sig_min)*np.random.rand(), 1)
-        sigma_x = np.ceil(sigma_x*100)/100
-        sigma_y = np.ceil(sigma_y*100)/100
+        # sigma_y = sig_min + np.round((sig_max-sig_min)*np.random.rand(), 1)
+        sigma_y = 0.2
+        sigma_x = np.round(np.ceil(sigma_x*100)/100, 1)
+        # sigma_y = np.ceil(sigma_y*100)/100
         theta = np.pi*np.random.rand()
         gen_kwargs = preprocessing.set_kernel_params(sigma_x=sigma_x, sigma_y=sigma_y, theta=theta)
         self.kernel_gen = rkg.Degradation(self.kernel_size, self.scale, **gen_kwargs)

@@ -52,7 +52,8 @@ class RCAB(nn.Module):
 
         super(RCAB, self).__init__()
         modules_body = []
-        self.kawm = KAWM(n_feat)
+        self.kawm1 = KAWM(n_feat)
+        self.kawm2 = KAWM(n_feat)
         
         for i in range(2):
             modules_body.append(conv(n_feat, n_feat, kernel_size, bias=bias))
@@ -69,7 +70,10 @@ class RCAB(nn.Module):
         for name, midlayer in self.body._modules.items():
             res = midlayer(res)
             if name == '0' and type(midlayer).__name__ == 'Conv2d':
-                res = self.kawm(res, x[1])
+                res = self.kawm1(res, x[1])
+            if name == '2' and type(midlayer).__name__ == 'Conv2d':
+                res = self.kawm2(res, x[1])
+                
         #res = self.body(x).mul(self.res_scale)
         res += x[0]
         return res, x[1]
@@ -143,16 +147,16 @@ class KAWM(nn.Module):
         
         self.transformer = nn.Conv2d(in_channel, in_channel, (3, 1), bias=False,
                                      padding=(1, 0), groups=in_channel, padding_mode='replicate')
-        self.transformer_v = nn.Conv2d(in_channel, in_channel, (1, 3), bias=False,
-                                     padding=(0, 1), groups=in_channel, padding_mode='replicate')
+        # self.transformer_vv = nn.Conv2d(in_channel, in_channel, (3, 1), bias=False,
+        #                              padding=(1, 0), groups=in_channel, padding_mode='replicate')
         
-        self.kernel_transformer_v = nn.Sequential(
-            nn.Conv2d(1, in_channel*2, 2, padding=0, bias=True),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=True),
-            nn.AdaptiveAvgPool2d(1),
-            nn.Sigmoid()
-        )
+        # self.kernel_transformer_vv = nn.Sequential(
+        #     nn.Conv2d(1, in_channel*2, 2, padding=0, bias=True),
+        #     nn.ReLU(inplace=True),
+        #     nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=True),
+        #     nn.AdaptiveAvgPool2d(1),
+        #     nn.Sigmoid()
+        # )
         
         self.kernel_transformer = nn.Sequential(
             nn.Conv2d(1, in_channel*2, 2, padding=0, bias=True),
@@ -163,33 +167,26 @@ class KAWM(nn.Module):
         )
         
         constant_init(self.transformer, val=0)
-        constant_init(self.transformer_v, val=0)
+        # constant_init(self.transformer_vv, val=0)
         
     def forward(self, x, kernel):
         b, c,_,_ = x.size()
         # dtype =  torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
         # x = torch.rot90(x, 1, [2,3])
         
-        global layer 
-        layer += 1
-        
         kernel = kernel.reshape(b, 1, 21, 21)
-        # kernel = torch.rot90(kernel, -1, [2,3])
+
         y = self.kernel_transformer(kernel) 
         moduled_x = self.transformer(x) * y 
         
-        util.save_tenosor2_img(y[:,:,0,0].transpose(1,0), str(layer)+'_h')
+        # y = self.kernel_transformer_vv(kernel) 
+        # moduled_y = self.transformer_vv(x) * y 
         
-        y = self.kernel_transformer_v(kernel) 
-        
-        # util.save_tenosor2_img(y[:,:,0,0].transpose(1,0), str(layer)+'_v')
-        
-        moduled_y = self.transformer_v(x) * y 
-        
-        
-        return  x + moduled_x + moduled_y
+        # return  x + moduled_x + moduled_y
+        return  x + moduled_x 
+        # return  x + moduled_x + moduled_y
         # return  x + moduled_x
-        # return x = x + moduled_y 
+        # return x + moduled_y 
         # return x 
 
         # return res + x

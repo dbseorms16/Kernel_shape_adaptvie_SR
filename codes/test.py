@@ -188,7 +188,7 @@ def main():
         log_s = '# Validation # Bicubic SSIM: {:.4f}:'.format(ssim_total_avg)
         print(log_s)
 
-
+    print('sig_x:',opt['datasets']['val']['sigma_x'],'sig_y:',opt['datasets']['val']['sigma_y'])
     print('End of evaluation.')
 
 if __name__ == '__main__':

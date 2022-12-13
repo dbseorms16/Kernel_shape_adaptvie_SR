@@ -1,5 +1,5 @@
 #### general settings
-name: SwinIR4002_1208_die
+name: QswinIR
 use_tb_logger: false
 model: video_base
 distortion: sr
@@ -11,7 +11,7 @@ gpu_ids: [0]
 datasets:
   train:
     name: Vimeo
-    mode: set_LQGT
+    mode: SETLQGT_dataset_randomblur
     interval_list: [1]
     random_reverse: false
     border_mode: false7
@@ -42,14 +42,14 @@ datasets:
     padding: new_info
     degradation_mode: set
     degradation_type: impulse
-    sigma_x: 4.0
-    sigma_y: 1.0
+    sigma_x: 1.0
+    sigma_y: 4.0
     theta: 0.0
 
 
 #### network structures
 network_G:
-  which_model_G: SwinIR
+  which_model_G: QSwinIR
   scale : 4
   in_chans : 3
   training_patch_size : 64
@@ -59,7 +59,7 @@ network_G:
 
 #### path
 path:
-  pretrain_model_G: F:\KAWM\pretrained\SwinIR/SwinIR_merged.pth
+  pretrain_model_G: F:\KAWM\pretrained\QSwinIR/QSwinIR.pth
   # pretrain_model_G: F:\KAWM\experiments\SwinIR4002_New_aa/models/1000_G.pth
   strict_load: False
   resume_state: ~
@@ -84,10 +84,10 @@ train:
   use_real: False
   pixel_criterion: l1
   pixel_weight: 1.0
-  val_freq: !!float 3000
+  val_freq: !!float 5000
   manual_seed: 0
 
 #### logger
 logger:
   print_freq: 100
-  save_checkpoint_freq: !!float 3000
+  save_checkpoint_freq: !!float 5000

@@ -11,6 +11,7 @@ import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 import imageio
 import os
+from models.archs.q_layer import ParaCALayer
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
@@ -21,35 +22,21 @@ class Mlp(nn.Module):
         self.act = act_layer()
         self.fc2 = nn.Linear(hidden_features, out_features)
         self.drop = nn.Dropout(drop)
-        self.KAWM_layers = KAWM(in_channel=hidden_features)
-        # self.KAWM_layers_1 = KAWM(in_channel=out_features)
+        self.ParaCALayers = ParaCALayer(network_channels=hidden_features, num_metadata=10, nonlinearity=True)
+
 
     def forward(self, x, x_size, kernel):
         H, W = x_size
         B, C, dim = x.size()
 
-                # self.KAWM_V_layers = nn.ModuleList()
-        # self.KAWM_layers = KAWM(in_channel=dim)
-
-        # for i in range(depth):
-        #     AdaptiveFM = KAWM(in_channel=dim)
-        #     # AdaptiveFM_V = KAWM_V(in_channel=dim)
-        #     # AdaptiveFM = KAWM(in_channel=embed_dim)
-        #     self.KAWM_layers.append(AdaptiveFM)
-            # self.KAWM_V_layers.append(AdaptiveFM_V)
-
         x = self.fc1(x)
         x = x.view(B, -1, H, W)
-        x = self.KAWM_layers(x, kernel)
+        x = self.ParaCALayers(x, kernel)
         x = x.view(B, H * W, -1)
 
         x = self.act(x)
         x = self.drop(x)
         x = self.fc2(x)
-        
-        # x = x.view(B, -1, H, W)
-        # x = self.KAWM_layers_1(x, kernel)
-        # x = x.view(B, H * W, -1)
 
         x = self.drop(x)
         return x
@@ -414,16 +401,8 @@ class BasicLayer(nn.Module):
                                  norm_layer=norm_layer)
             for i in range(depth)])
 
-        # self.KAWM_V_layers = nn.ModuleList()
-        # self.KAWM_layers = KAWM(in_channel=dim)
-
-        # for i in range(depth):
-        #     AdaptiveFM = KAWM(in_channel=dim)
-        #     # AdaptiveFM_V = KAWM_V(in_channel=dim)
-        #     # AdaptiveFM = KAWM(in_channel=embed_dim)
-        #     self.KAWM_layers.append(AdaptiveFM)
-            # self.KAWM_V_layers.append(AdaptiveFM_V)
-            
+        self.q_node = ParaCALayer(network_channels=dim, num_metadata=10, nonlinearity=True)
+        
         # patch merging layer
         if downsample is not None:
             self.downsample = downsample(input_resolution, dim=dim, norm_layer=norm_layer)
@@ -437,11 +416,14 @@ class BasicLayer(nn.Module):
             else:
                 x = blk(x, x_size, kernel)
                 
-                # x = self.KAWM_layers[index](x, x_size, kernel)
-            # x = self.KAWM_layers(x, x_size, kernel)
-                
-                # x = self.KAWM_V_layers[index](x, x_size, kernel)
-            
+        ## modulate area
+        B, HW, C = x.size()
+        H, W = x_size
+        
+        x = x.reshape(B, C, H, W)
+        x = self.q_node(x, kernel)
+        x = x.reshape(B, HW, C)
+        
         if self.downsample is not None:
             x = self.downsample(x)
         return x
@@ -468,54 +450,8 @@ class PCAEncoder(object):
             self.weight = Variable(self.weight)
 
     def __call__(self, batch_kernel):
-        B, C, H, W = batch_kernel.size() #[B, l, l]
+        B, H, W = batch_kernel.size() #[B, l, l]
         return torch.bmm(batch_kernel.view((B, 1, H * W)), self.weight.expand((B, ) + self.size)).view((B, -1))
-
-class KAWM(nn.Module):
-  
-    def __init__(self, in_channel, kernel_size=3):
-
-        super(KAWM, self).__init__()
-        
-        self.kernel_transformer = nn.Sequential(
-            nn.Conv2d(1, in_channel*2, 2, padding=0, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=False),
-            nn.AdaptiveAvgPool2d(1),
-            nn.Sigmoid()
-        )
-
-        self.kernel_transformer_v = nn.Sequential(
-            nn.Conv2d(1, in_channel*2, 2, padding=0, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=False),
-            nn.AdaptiveAvgPool2d(1),
-            nn.Sigmoid()
-        )
-                
-        self.transformer = nn.Conv2d(in_channel, in_channel, (3, 1), bias=False,
-                                     padding=(1,0), groups=in_channel, padding_mode='replicate')
-        self.transformer_v = nn.Conv2d(in_channel, in_channel, (1, 3), bias=False,
-                                padding=(0,1), groups=in_channel, padding_mode='replicate')
-
-
-        constant_init(self.transformer, val=0)
-        constant_init(self.transformer_v, val=0)
-        
-    def forward(self, x, kernel):
-        b, c,_,_ = x.size()
-        kernel = kernel.reshape(b, 1, 21, 21)
-        y = self.kernel_transformer(kernel) * 0.75
-        modulated_x = self.transformer(x) * y
-
-        y = self.kernel_transformer_v(kernel) * 0.25
-        modulated_y = self.transformer_v(x) * y
-        
-        return x + modulated_x + modulated_y
-        # return x + modulated_x 
-        # return x + modulated_y 
-        return x 
-
 
 class RSTB(nn.Module):
     """Residual Swin Transformer Block (RSTB).
@@ -716,7 +652,7 @@ class UpsampleOneStep(nn.Sequential):
         return flops
 
 
-class SwinIR(nn.Module):
+class QSwinIR(nn.Module):
     r""" SwinIR
         A PyTorch impl of : `SwinIR: Image Restoration Using Swin Transformer`, based on Swin Transformer.
 
@@ -751,7 +687,7 @@ class SwinIR(nn.Module):
                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
                  use_checkpoint=False, upscale=2, img_range=1., upsampler='', resi_connection='1conv',
                  **kwargs):
-        super(SwinIR, self).__init__()
+        super(QSwinIR, self).__init__()
         num_in_ch = in_chans
         num_out_ch = in_chans
         num_feat = 64
@@ -844,12 +780,12 @@ class SwinIR(nn.Module):
             # for classical SR
             self.conv_before_upsample = nn.Sequential(nn.Conv2d(embed_dim, num_feat, 3, 1, 1),
                                                       nn.LeakyReLU(inplace=True))
-            self.conv_befor_transformer = KAWM(num_feat) 
+            self.conv_befor_transformer = ParaCALayer(network_channels=num_feat, num_metadata=10, nonlinearity=True)
             self.upsample = Upsample(upscale, num_feat)
             self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
             
-            self.before_transformer = KAWM(embed_dim) 
-            self.conv_after_body_transformer = KAWM(embed_dim) 
+            self.before_transformer = ParaCALayer(network_channels=embed_dim, num_metadata=10, nonlinearity=True) 
+            self.conv_after_body_transformer = ParaCALayer(network_channels=embed_dim, num_metadata=10, nonlinearity=True)
         else:
             # for image denoising and JPEG compression artifact reduction
             self.conv_last = nn.Conv2d(embed_dim, num_out_ch, 3, 1, 1)
@@ -860,12 +796,13 @@ class SwinIR(nn.Module):
         self.encoder = PCAEncoder(torch.load('../pca_matrix_x4.pth'), cuda=True)
 
     def forward(self, x, kernel):
+        kernel = self.encoder(kernel)
+        
         H, W = x.shape[2:]
         x = self.check_image_size(x)
         
         self.mean = self.mean.type_as(x)
         x = (x - self.mean) * self.img_range
-
         if self.upsampler == 'pixelshuffle':
             # for classical SR
             x = self.conv_first(x)
@@ -950,7 +887,7 @@ if __name__ == '__main__':
     window_size = 8
     height = (1024 // upscale // window_size + 1) * window_size
     width = (720 // upscale // window_size + 1) * window_size
-    model = SwinIR(upscale=2, img_size=(height, width),
+    model = QSwinIR(upscale=2, img_size=(height, width),
                    window_size=window_size, img_range=1., depths=[6, 6, 6, 6],
                    embed_dim=60, num_heads=[6, 6, 6, 6], mlp_ratio=2, upsampler='pixelshuffledirect')
     print(model)

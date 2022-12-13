@@ -1,5 +1,5 @@
 #### general settings
-name: RCAN_fix-VV
+name: Meta_RCANonly3x1_v2
 use_tb_logger: false
 model: video_base
 distortion: sr
@@ -11,7 +11,9 @@ gpu_ids: [0]
 datasets:
   train:
     name: Vimeo
-    mode: set_LQGT
+    # mode: set_LQGT
+    mode: SETLQGT_dataset_randomblur
+    
     interval_list: [1]
     random_reverse: false
     border_mode: false7
@@ -22,13 +24,13 @@ datasets:
     img_type: img
     use_shuffle: true
     n_workers: 3  # per GPU
-    batch_size: 8
+    batch_size: 50
     patch_size: 64
     kernel_size: 21
     use_flip: true
     use_rot: true
     color: RGB
-    sigma_x: 0.2
+    sigma_x: 4.0
     sigma_y: 4.0
     theta: 0.0
 
@@ -36,8 +38,8 @@ datasets:
   val:
     name: Vid4
     mode: set_LQGT
-    # dataroot_GT: F:\DIV2K\BSD100\HR
-    dataroot_GT: F:\DIV2K\Set5\HR
+    dataroot_GT: F:\DIV2K\BSD100\HR
+    # dataroot_GT: F:\DIV2K\Set5\HR
     # dataroot_GT: F:\DIV2K\DIV2K_valid_HR
     cache_data: True
     padding: new_info
@@ -63,8 +65,11 @@ network_G:
 
 #### path
 path:
-  # pretrain_model_G: F:\KAWM\pretrained\RCAN/RCAN0202.pth  
-  pretrain_model_G: F:\KAWM\pretrained\RCAN/RCAN0240.pth
+  # pretrain_model_G: F:\KAWM\pretrained\RCAN/merged_RCAN.pth  
+  pretrain_model_G: F:\KAWM\pretrained\RCAN/RCAN0202.pth
+  
+  # pretrain_model_G: F:\KAWM\experiments\RCAN4040_merge\models/23000_G.pth
+  # pretrain_model_G: F:\KAWM\pretrained\RCAN/merge_RCAN.pth
   strict_load: False
   resume_state: ~
   img_save_path: ../results
@@ -88,10 +93,10 @@ train:
   use_real: False
   pixel_criterion: l1
   pixel_weight: 1.0
-  val_freq: !!float 1000
+  val_freq: !!float 5000
   manual_seed: 0
 
 #### logger
 logger:
   print_freq: 100
-  save_checkpoint_freq: !!float 1000
+  save_checkpoint_freq: !!float 5000

@@ -121,11 +121,12 @@ class VideoBaseModel(BaseModel):
             else:
                 optim_params = []
                 for k, v in self.netG.named_parameters():
-                    # v.requires_grad = False
-                    # if k.find('transformer') >= 0:
+                    v.requires_grad = False
+                    if k.find('transformer') >= 0 :
+                        # if k.find('transformer') >= 0 and k.find('_v') >= 0:
                     # # # if k.find('attent') >= 0:
-                    #     print(k)
-                    #     v.requires_grad = True
+                        print(k)
+                        v.requires_grad = True
                     
                     if v.requires_grad:
                         optim_params.append(v)

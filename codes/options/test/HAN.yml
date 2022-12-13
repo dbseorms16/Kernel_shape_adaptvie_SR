@@ -29,7 +29,7 @@ datasets:
     use_rot: true
     color: RGB
     sigma_x: 4.0
-    sigma_y: 0.2
+    sigma_y: 1.0
     theta: 0.0
 
 
@@ -42,8 +42,8 @@ datasets:
     padding: new_info
     degradation_mode: set
     degradation_type: impulse
-    sigma_x: 1.0
-    sigma_y: 0.2
+    sigma_x: 3.0
+    sigma_y: 4.0
     theta: 0.0
 
 
@@ -80,7 +80,7 @@ train:
   beta1: 0.9
   beta2: 0.99
   epochs: 1300
-  niter: 22000
+  niter: 100000
   warmup_iter: -1  # -1: no warm up
   lr_steps: [40000, 60000]
   lr_gamma: 0.2

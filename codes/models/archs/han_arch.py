@@ -106,7 +106,8 @@ class RCAB(nn.Module):
 
         super(RCAB, self).__init__()
         modules_body = []
-        self.kawm = KAWM(n_feat)
+        # self.kawm1 = KAWM(n_feat)
+        # self.kawm2 = KAWM(n_feat)
         
         for i in range(2):
             modules_body.append(conv(n_feat, n_feat, kernel_size, bias=bias))
@@ -122,8 +123,11 @@ class RCAB(nn.Module):
         res = x[0]
         for name, midlayer in self.body._modules.items():
             res = midlayer(res)
-            if name == '0' and type(midlayer).__name__ == 'Conv2d':
-                res = self.kawm(res, x[1])
+            # if name == '0' and type(midlayer).__name__ == 'Conv2d':
+            #     res = self.kawm1(res, x[1])
+            # if name == '2' and type(midlayer).__name__ == 'Conv2d':
+            #     res = self.kawm2(res, x[1])
+                
         #res = self.body(x).mul(self.res_scale)
         res += x[0]
         return res, x[1]
@@ -168,20 +172,20 @@ class KAWM(nn.Module):
         
         kernel = kernel.reshape(b, 1, 21, 21)
         # kernel = torch.rot90(kernel, -1, [2,3])
-        y = self.kernel_transformer(kernel) * 0.25
+        y = self.kernel_transformer(kernel) 
         moduled_x = self.transformer(x) * y 
         
         # y = self.kernel_transformer_v(kernel) 
         # moduled_y = self.transformer_v(x) * y 
         
         # x = x + moduled_x + moduled_y
-        x = x + moduled_x 
+        # x = x + moduled_x 
         # x = x 
         # x = x + moduled_x + moduled_y 
 
         # x = torch.rot90(x, -1, [2,3])
         
-        return x 
+        return x + moduled_x
 
 def get_valid_padding(kernel_size, dilation):
     kernel_size = kernel_size + (kernel_size - 1) * (dilation - 1)

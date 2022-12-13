@@ -36,13 +36,15 @@ datasets:
   val:
     name: Vid4
     mode: set_LQGT
-    dataroot_GT: F:\DIV2K\BSD100\HR
+    # dataroot_GT: F:\DIV2K\Set14\HR
+    dataroot_GT: F:\DIV2K\urban100\HR
+    # dataroot_GT: F:\DIV2K\BSD100\HR
     cache_data: True
     padding: new_info
     degradation_mode: set
     degradation_type: impulse
     sigma_x: 4.0
-    sigma_y: 0.2
+    sigma_y: 4.0
     theta: 0.0
 
 
@@ -62,7 +64,7 @@ network_G:
 
 #### path
 path:
-  pretrain_model_G: 
+  pretrain_model_G: F:\KAWM\experiments\QRCAN\models/35000_G.pth
   strict_load: False
   resume_state: ~
   img_save_path: ../results

@@ -68,6 +68,12 @@ def define_G(opt):
     elif which_model == 'QRCAN':
         import models.archs.qrcan as qrcan
         netG = qrcan.QRCAN(args=opt_net, pca=opt_net['pca_matrix'])
+    
+    elif which_model == 'QSwinIR':
+        import models.archs.q_swinir_arch as q_swinir_arch
+        netG = q_swinir_arch.QSwinIR(args=opt_net, pca=opt_net['pca_matrix'], upscale=opt_net['scale'], in_chans=3, img_size=opt_net['training_patch_size'], window_size=8,
+                    img_range=1., depths=[6, 6, 6, 6, 6, 6], embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6],
+                    mlp_ratio=2, upsampler='pixelshuffle', resi_connection='1conv')
         
         
     else:
