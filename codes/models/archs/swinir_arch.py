@@ -21,36 +21,13 @@ class Mlp(nn.Module):
         self.act = act_layer()
         self.fc2 = nn.Linear(hidden_features, out_features)
         self.drop = nn.Dropout(drop)
-        self.KAWM_layers = KAWM(in_channel=hidden_features)
-        # self.KAWM_layers_1 = KAWM(in_channel=out_features)
 
     def forward(self, x, x_size, kernel):
-        H, W = x_size
-        B, C, dim = x.size()
-
-                # self.KAWM_V_layers = nn.ModuleList()
-        # self.KAWM_layers = KAWM(in_channel=dim)
-
-        # for i in range(depth):
-        #     AdaptiveFM = KAWM(in_channel=dim)
-        #     # AdaptiveFM_V = KAWM_V(in_channel=dim)
-        #     # AdaptiveFM = KAWM(in_channel=embed_dim)
-        #     self.KAWM_layers.append(AdaptiveFM)
-            # self.KAWM_V_layers.append(AdaptiveFM_V)
-
         x = self.fc1(x)
-        x = x.view(B, -1, H, W)
-        x = self.KAWM_layers(x, kernel)
-        x = x.view(B, H * W, -1)
-
         x = self.act(x)
         x = self.drop(x)
         x = self.fc2(x)
         
-        # x = x.view(B, -1, H, W)
-        # x = self.KAWM_layers_1(x, kernel)
-        # x = x.view(B, H * W, -1)
-
         x = self.drop(x)
         return x
 
@@ -413,16 +390,6 @@ class BasicLayer(nn.Module):
                                  drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
                                  norm_layer=norm_layer)
             for i in range(depth)])
-
-        # self.KAWM_V_layers = nn.ModuleList()
-        # self.KAWM_layers = KAWM(in_channel=dim)
-
-        # for i in range(depth):
-        #     AdaptiveFM = KAWM(in_channel=dim)
-        #     # AdaptiveFM_V = KAWM_V(in_channel=dim)
-        #     # AdaptiveFM = KAWM(in_channel=embed_dim)
-        #     self.KAWM_layers.append(AdaptiveFM)
-            # self.KAWM_V_layers.append(AdaptiveFM_V)
             
         # patch merging layer
         if downsample is not None:
@@ -436,12 +403,6 @@ class BasicLayer(nn.Module):
                 x = checkpoint.checkpoint(blk, x, x_size)
             else:
                 x = blk(x, x_size, kernel)
-                
-                # x = self.KAWM_layers[index](x, x_size, kernel)
-            # x = self.KAWM_layers(x, x_size, kernel)
-                
-                # x = self.KAWM_V_layers[index](x, x_size, kernel)
-            
         if self.downsample is not None:
             x = self.downsample(x)
         return x
@@ -477,21 +438,21 @@ class KAWM(nn.Module):
 
         super(KAWM, self).__init__()
         
-        self.kernel_transformer = nn.Sequential(
-            nn.Conv2d(1, in_channel*2, 2, padding=0, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=False),
-            nn.AdaptiveAvgPool2d(1),
-            nn.Sigmoid()
-        )
+        # self.kernel_transformer = nn.Sequential(
+        #     nn.Conv2d(1, in_channel*2, 2, padding=0, bias=False),
+        #     nn.ReLU(inplace=True),
+        #     nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=False),
+        #     nn.AdaptiveAvgPool2d(1),
+        #     nn.Sigmoid()
+        # )
 
-        self.kernel_transformer_v = nn.Sequential(
-            nn.Conv2d(1, in_channel*2, 2, padding=0, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=False),
-            nn.AdaptiveAvgPool2d(1),
-            nn.Sigmoid()
-        )
+        # self.kernel_transformer_v = nn.Sequential(
+        #     nn.Conv2d(1, in_channel*2, 2, padding=0, bias=False),
+        #     nn.ReLU(inplace=True),
+        #     nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=False),
+        #     nn.AdaptiveAvgPool2d(1),
+        #     nn.Sigmoid()
+        # )
                 
         self.transformer = nn.Conv2d(in_channel, in_channel, (3, 1), bias=False,
                                      padding=(1,0), groups=in_channel, padding_mode='replicate')
@@ -499,22 +460,18 @@ class KAWM(nn.Module):
                                 padding=(0,1), groups=in_channel, padding_mode='replicate')
 
 
-        constant_init(self.transformer, val=0)
-        constant_init(self.transformer_v, val=0)
+        # constant_init(self.transformer, val=0)
+        # constant_init(self.transformer_v, val=0)
         
     def forward(self, x, kernel):
         b, c,_,_ = x.size()
-        kernel = kernel.reshape(b, 1, 21, 21)
-        y = self.kernel_transformer(kernel) * 0.75
-        modulated_x = self.transformer(x) * y
 
-        y = self.kernel_transformer_v(kernel) * 0.25
-        modulated_y = self.transformer_v(x) * y
+        modulated_x = self.transformer(x)
+        modulated_y = self.transformer_v(x) 
         
         return x + modulated_x + modulated_y
         # return x + modulated_x 
         # return x + modulated_y 
-        return x 
 
 
 class RSTB(nn.Module):
@@ -578,9 +535,19 @@ class RSTB(nn.Module):
         self.patch_unembed = PatchUnEmbed(
             img_size=img_size, patch_size=patch_size, in_chans=0, embed_dim=dim,
             norm_layer=None)
-
+        self.KAWM1 = KAWM(dim)
+        self.KAWM2 = KAWM(dim)
+        
     def forward(self, x, x_size, kernel):
-        return self.patch_embed(self.conv(self.patch_unembed(self.residual_group(x, x_size, kernel), x_size))) + x
+        res = self.residual_group(x, x_size, kernel)
+        B, dim, c = res.size()
+        H, W = x_size[0], x_size[1]
+        res = res.reshape(B, -1, H, W)
+        res = self.KAWM1(res, kernel)
+        res = res.reshape(B, H * W, -1)
+        res = self.conv(self.patch_unembed(res, x_size))
+        res = self.KAWM2(res, kernel)
+        return self.patch_embed(res) + x
 
     def flops(self):
         flops = 0
@@ -844,12 +811,8 @@ class SwinIR(nn.Module):
             # for classical SR
             self.conv_before_upsample = nn.Sequential(nn.Conv2d(embed_dim, num_feat, 3, 1, 1),
                                                       nn.LeakyReLU(inplace=True))
-            self.conv_befor_transformer = KAWM(num_feat) 
             self.upsample = Upsample(upscale, num_feat)
             self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
-            
-            self.before_transformer = KAWM(embed_dim) 
-            self.conv_after_body_transformer = KAWM(embed_dim) 
         else:
             # for image denoising and JPEG compression artifact reduction
             self.conv_last = nn.Conv2d(embed_dim, num_out_ch, 3, 1, 1)
@@ -899,9 +862,6 @@ class SwinIR(nn.Module):
             x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
 
-        # kernel = kernel.reshape(b, 1, 21, 21)
-        # kernel = self.encoder(kernel)
-        
         for layer in self.layers:
             x = layer(x, x_size, kernel)
         x = self.norm(x)  # B L C

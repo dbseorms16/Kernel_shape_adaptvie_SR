@@ -45,7 +45,7 @@ def define_G(opt):
     
     elif which_model == 'RCAN':
         import models.archs.rcan_arch as rcan_arch
-        netG = rcan_arch.RCAN(args=opt_net)
+        netG = rcan_arch.RCAN(args=opt_net, pca=opt_net['pca_matrix'])
 
     elif which_model == 'SwinIR':
         import models.archs.swinir_arch as swinir_arch

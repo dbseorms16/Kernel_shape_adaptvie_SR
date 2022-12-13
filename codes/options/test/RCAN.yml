@@ -1,5 +1,5 @@
 #### general settings
-name: RCAN4002_test_modulate
+name: RCAN4040_train_all
 use_tb_logger: false
 model: video_base
 distortion: sr
@@ -30,7 +30,7 @@ datasets:
     use_rot: true
     color: RGB
     sigma_x: 4.0
-    sigma_y: 0.2
+    sigma_y: 4.0
     theta: 0.0
 
 
@@ -45,8 +45,8 @@ datasets:
     padding: new_info
     degradation_mode: set
     degradation_type: impulse
-    sigma_x: 4.0
-    sigma_y: 0.2
+    sigma_x: 0.2
+    sigma_y: 4.0
     theta: 0.0
 
 
@@ -67,7 +67,9 @@ network_G:
 path:
   # pretrain_model_G: F:\KAWM\pretrained\RCAN/merged_RCAN.pth  
   # pretrain_model_G: F:\KAWM\pretrained\RCAN/RCAN0202.pth
-  pretrain_model_G: F:\KAWM\experiments\RCAN4002\models/1000_G.pth
+  # pretrain_model_G: F:\KAWM\pretrained\RCAN/RCAN4002_new.pth
+  pretrain_model_G: F:\KAWM\experiments\RCAN4040_train_all\models/6000_G.pth
+  # pretrain_model_G: F:\KAWM\experiments\RCAN4002\models/1000_G.pth
   # pretrain_model_G: F:\KAWM\experiments\RCAN4002_more\models/48000_G.pth
   
   # pretrain_model_G: F:\KAWM\experiments\RCANonly3x1_v2\models/40000_G.pth

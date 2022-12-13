@@ -5,6 +5,7 @@ import numpy as np
 
 from models.archs import common
 from utils import util
+from models.archs.qhan import PCAEncoder
 
 # Channel Attention (CA) Layer
 class CALayer(nn.Module):
@@ -147,27 +148,26 @@ class KAWM(nn.Module):
         
         self.transformer = nn.Conv2d(in_channel, in_channel, (3, 1), bias=False,
                                      padding=(1, 0), groups=in_channel, padding_mode='replicate')
-        # self.transformer_vv = nn.Conv2d(in_channel, in_channel, (3, 1), bias=False,
-        #                              padding=(1, 0), groups=in_channel, padding_mode='replicate')
+        self.transformer_v = nn.Conv2d(in_channel, in_channel, (1, 3), bias=False,
+                                     padding=(0, 1), groups=in_channel, padding_mode='replicate')
         
-        # self.kernel_transformer_v = nn.Sequential(
-        #     nn.Conv2d(1, in_channel*2, 2, padding=0, bias=True),
-        #     nn.ReLU(inplace=True),
-        #     nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=True),
-        #     nn.AdaptiveAvgPool2d(1),
-        #     nn.Sigmoid()
-        # )
         
-        # self.kernel_transformer = nn.Sequential(
-        #     nn.Conv2d(1, in_channel*2, 2, padding=0, bias=True),
-        #     nn.ReLU(inplace=True),
-        #     nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=True),
-        #     nn.AdaptiveAvgPool2d(1),
-        #     nn.Sigmoid()
-        # )
+        self.kernel_attentive = nn.Sequential(
+            nn.Linear(10, in_channel // 2),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_channel // 2, in_channel),
+            nn.Sigmoid()
+        )
+        
+        self.kernel_attentive_v = nn.Sequential(
+            nn.Linear(10, in_channel // 2),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_channel // 2, in_channel),
+            nn.Sigmoid()
+        )
         
         constant_init(self.transformer, val=0)
-        # constant_init(self.transformer_vv, val=0)
+        constant_init(self.transformer_v, val=0)
         
     def forward(self, x, kernel):
         b, c,_,_ = x.size()
@@ -176,19 +176,17 @@ class KAWM(nn.Module):
         
         # kernel = kernel.reshape(b, 1, 21, 21)
 
-        # y = self.kernel_transformer(kernel)
         # moduled_x = self.transformer(x) 
-        moduled_x = self.transformer(x) 
+        # moduled_y = self.transformer_v(x) 
         
-        # y = self.kernel_transformer_vv(kernel) 
-        # moduled_y = self.transformer_vv(x) * y 
+        ## add kerenel
+        x_att_map = self.kernel_attentive(kernel) 
+        moduled_x = self.transformer(x) * x_att_map[:,:, None, None]
         
-        # return  x + moduled_x + moduled_y
-        return  x + moduled_x
-        # return  x + moduled_x + moduled_y
-        # return  x + moduled_x
-        # return x + moduled_y 
-        # return x 
+        y_att_map = self.kernel_attentive_v(kernel) 
+        moduled_y = self.transformer_v(x) * y_att_map[:,:, None, None]
+        
+        return  x + moduled_x + moduled_y
 
         # return res + x
 import torch.nn.functional as F
@@ -210,7 +208,7 @@ class RCAN(nn.Module):
     """
     Based on implementation in https://github.com/thstkdgus35/EDSR-PyTorch
     """
-    def __init__(self, args, n_resblocks=20, n_resgroups=10, n_feats=64, in_feats=3, out_feats=3, scale=4, reduction=16,
+    def __init__(self, args, pca, n_resblocks=20, n_resgroups=10, n_feats=64, in_feats=3, out_feats=3, scale=4, reduction=16,
                  res_scale=1.0):
         super(RCAN, self).__init__()
 
@@ -228,16 +226,22 @@ class RCAN(nn.Module):
         modules_body.append(common.default_conv(n_feats, n_feats, kernel_size))
 
         # define tail module
-        modules_tail = [
-            common.Upsampler(common.default_conv, scale, n_feats, act=False),
+        modules_tail = [common.Upsampler(common.default_conv, scale, n_feats, act=False),
             common.default_conv(n_feats, out_feats, kernel_size)]
 
+        # self.KAWM = KAWM(n_feats)
         self.head = nn.Sequential(*modules_head)
         self.body = nn.Sequential(*modules_body)
         self.tail = nn.Sequential(*modules_tail)
+        self.encoder = PCAEncoder(torch.load(pca), cuda=True)
+        
+        
 
     def forward(self, x, kernel):
         dtype =  torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
+        
+        kernel = self.encoder(kernel)
+        
         # x = rot_img(x, np.pi/2, dtype)
         # x = rot_img(x, -np.pi/2, dtype)
         
@@ -248,7 +252,17 @@ class RCAN(nn.Module):
                 res, _ = midlayer((res, kernel))
             else:
                 res = midlayer(res)
+                
+        # res = self.KAWM(res, kernel)
         res += x
+
+        # for name, taillayer in self.tail._modules.items():
+        #     if name == '0':
+        #         print(res.size())
+        #         print(res.size())
+        #         res = taillayer(res)
+        #     else:
+        #         res = taillayer(res)
         x = self.tail(res)
         
         # x = rot_img(x, -np.pi/2, dtype)
@@ -279,3 +293,4 @@ def constant_init(module, val, bias=0):
         nn.init.constant_(module.weight, val)
     if hasattr(module, 'bias') and module.bias is not None:
         nn.init.constant_(module.bias, bias)
+
