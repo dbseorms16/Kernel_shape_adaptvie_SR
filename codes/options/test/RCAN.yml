@@ -1,5 +1,5 @@
 #### general settings
-name: Meta_RCANonly3x1_v2
+name: RCAN4002_test_modulate
 use_tb_logger: false
 model: video_base
 distortion: sr
@@ -12,8 +12,7 @@ datasets:
   train:
     name: Vimeo
     # mode: set_LQGT
-    mode: SETLQGT_dataset_randomblur
-    
+    mode: set_LQGT
     interval_list: [1]
     random_reverse: false
     border_mode: false7
@@ -31,14 +30,15 @@ datasets:
     use_rot: true
     color: RGB
     sigma_x: 4.0
-    sigma_y: 4.0
+    sigma_y: 0.2
     theta: 0.0
 
 
   val:
     name: Vid4
     mode: set_LQGT
-    dataroot_GT: F:\DIV2K\BSD100\HR
+    # dataroot_GT: F:\DIV2K\BSD100\HR
+    dataroot_GT: F:\KAWM\sample
     # dataroot_GT: F:\DIV2K\Set5\HR
     # dataroot_GT: F:\DIV2K\DIV2K_valid_HR
     cache_data: True
@@ -46,7 +46,7 @@ datasets:
     degradation_mode: set
     degradation_type: impulse
     sigma_x: 4.0
-    sigma_y: 4.0
+    sigma_y: 0.2
     theta: 0.0
 
 
@@ -66,9 +66,11 @@ network_G:
 #### path
 path:
   # pretrain_model_G: F:\KAWM\pretrained\RCAN/merged_RCAN.pth  
-  pretrain_model_G: F:\KAWM\pretrained\RCAN/RCAN0202.pth
+  # pretrain_model_G: F:\KAWM\pretrained\RCAN/RCAN0202.pth
+  pretrain_model_G: F:\KAWM\experiments\RCAN4002\models/1000_G.pth
+  # pretrain_model_G: F:\KAWM\experiments\RCAN4002_more\models/48000_G.pth
   
-  # pretrain_model_G: F:\KAWM\experiments\RCAN4040_merge\models/23000_G.pth
+  # pretrain_model_G: F:\KAWM\experiments\RCANonly3x1_v2\models/40000_G.pth
   # pretrain_model_G: F:\KAWM\pretrained\RCAN/merge_RCAN.pth
   strict_load: False
   resume_state: ~
@@ -93,10 +95,10 @@ train:
   use_real: False
   pixel_criterion: l1
   pixel_weight: 1.0
-  val_freq: !!float 5000
+  val_freq: !!float 1000
   manual_seed: 0
 
 #### logger
 logger:
   print_freq: 100
-  save_checkpoint_freq: !!float 5000
+  save_checkpoint_freq: !!float 1000

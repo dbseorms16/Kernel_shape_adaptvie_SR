@@ -150,7 +150,7 @@ class KAWM(nn.Module):
         # self.transformer_vv = nn.Conv2d(in_channel, in_channel, (3, 1), bias=False,
         #                              padding=(1, 0), groups=in_channel, padding_mode='replicate')
         
-        # self.kernel_transformer_vv = nn.Sequential(
+        # self.kernel_transformer_v = nn.Sequential(
         #     nn.Conv2d(1, in_channel*2, 2, padding=0, bias=True),
         #     nn.ReLU(inplace=True),
         #     nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=True),
@@ -158,13 +158,13 @@ class KAWM(nn.Module):
         #     nn.Sigmoid()
         # )
         
-        self.kernel_transformer = nn.Sequential(
-            nn.Conv2d(1, in_channel*2, 2, padding=0, bias=True),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=True),
-            nn.AdaptiveAvgPool2d(1),
-            nn.Sigmoid()
-        )
+        # self.kernel_transformer = nn.Sequential(
+        #     nn.Conv2d(1, in_channel*2, 2, padding=0, bias=True),
+        #     nn.ReLU(inplace=True),
+        #     nn.Conv2d(in_channel*2, in_channel, 2, padding=0, bias=True),
+        #     nn.AdaptiveAvgPool2d(1),
+        #     nn.Sigmoid()
+        # )
         
         constant_init(self.transformer, val=0)
         # constant_init(self.transformer_vv, val=0)
@@ -174,16 +174,17 @@ class KAWM(nn.Module):
         # dtype =  torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
         # x = torch.rot90(x, 1, [2,3])
         
-        kernel = kernel.reshape(b, 1, 21, 21)
+        # kernel = kernel.reshape(b, 1, 21, 21)
 
-        y = self.kernel_transformer(kernel) 
-        moduled_x = self.transformer(x) * y 
+        # y = self.kernel_transformer(kernel)
+        # moduled_x = self.transformer(x) 
+        moduled_x = self.transformer(x) 
         
         # y = self.kernel_transformer_vv(kernel) 
         # moduled_y = self.transformer_vv(x) * y 
         
         # return  x + moduled_x + moduled_y
-        return  x + moduled_x 
+        return  x + moduled_x
         # return  x + moduled_x + moduled_y
         # return  x + moduled_x
         # return x + moduled_y 
@@ -272,53 +273,6 @@ class RCAN(nn.Module):
     def reset_parameters(self):
         # TODO: Find out how to do this!
         pass
-
-class SRMD(nn.Module):
-    """
-    Based on implementation in https://github.com/cszn/KAIR/
-    Defaults to noise-free model here.
-    """
-    def __init__(self, in_nc=18, out_nc=3, nc=128, nb=12, scale=4, act_mode='R', upsample_mode='pixelshuffle', **kwargs):
-        """
-        # ------------------------------------
-        in_nc: channel number of input, default: 3+15
-        out_nc: channel number of output
-        nc: channel number
-        nb: total number of conv layers
-        upscale: scale factor
-        act_mode: batch norm + activation function; 'BR' means BN+ReLU
-        upsample_mode: default 'pixelshuffle' = conv + pixelshuffle
-        # ------------------------------------
-        """
-        super(SRMD, self).__init__()
-        assert 'R' in act_mode or 'L' in act_mode, 'Examples of activation function: R, L, BR, BL, IR, IL'
-        bias = True
-
-        if upsample_mode == 'upconv':
-            upsample_block = B.upsample_upconv
-        elif upsample_mode == 'pixelshuffle':
-            upsample_block = B.upsample_pixelshuffle
-        elif upsample_mode == 'convtranspose':
-            upsample_block = B.upsample_convtranspose
-        else:
-            raise NotImplementedError('upsample mode [{:s}] is not found'.format(upsample_mode))
-
-        m_head = B.conv(in_nc, nc, mode='C'+act_mode[-1], bias=bias)
-        m_body = [B.conv(nc, nc, mode='C'+act_mode, bias=bias) for _ in range(nb-2)]
-        m_tail = upsample_block(nc, out_nc, mode=str(scale), bias=bias)
-
-        self.model = B.sequential(m_head, *m_body, m_tail)
-
-    #    def forward(self, x, k_pca):
-    #        m = k_pca.repeat(1, 1, x.size()[-2], x.size()[-1])
-    #        x = torch.cat((x, m), 1)
-    #        x = self.body(x)
-
-    def forward(self, x):
-
-        x = self.model(x)
-
-        return x
 
 def constant_init(module, val, bias=0):
     if hasattr(module, 'weight') and module.weight is not None:
